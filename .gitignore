@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Packages / Bundles
+*.zip
+*.xpi
+*.crx
+
+# OS / Editor junk
+.DS_Store
+.vscode/
+.idea/
+*.log

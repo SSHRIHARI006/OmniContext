@@ -1,0 +1,75 @@
+{
+  "manifest_version": 3,
+  "name": "OmniContext — LLM Context & Bloat Monitor",
+  "version": "1.0.0",
+  "description": "Real-time context window usage, token density, and context bloat score monitor across ChatGPT, Claude, Gemini, DeepSeek, Kimi, Qwen.",
+  "author": "OmniContext Team",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "omnicontext@omnicontext.extension",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": []
+      }
+    }
+  },
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.chatgpt.com/*",
+    "*://*.openai.com/*",
+    "*://*.claude.ai/*",
+    "*://*.gemini.google.com/*",
+    "*://*.deepseek.com/*",
+    "*://*.moonshot.cn/*",
+    "*://*.aliyun.com/*",
+    "*://*.qwenlm.ai/*"
+  ],
+  "background": {
+    "service_worker": "src/background/serviceWorker.js",
+    "scripts": [
+      "src/background/serviceWorker.js"
+    ]
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "OmniContext Monitor",
+    "default_icon": "src/assets/icons/icon.svg"
+  },
+  "icons": {
+    "16": "src/assets/icons/icon.svg",
+    "48": "src/assets/icons/icon.svg",
+    "128": "src/assets/icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.chatgpt.com/*",
+        "*://*.openai.com/*",
+        "*://*.claude.ai/*",
+        "*://*.gemini.google.com/*",
+        "*://*.deepseek.com/*",
+        "*://*.moonshot.cn/*",
+        "*://*.aliyun.com/*",
+        "*://*.qwenlm.ai/*"
+      ],
+      "js": [
+        "src/content/content.bundle.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/ui/floatingWidget.css",
+        "src/assets/icons/icon.svg"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

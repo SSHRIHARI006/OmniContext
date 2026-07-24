@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniContext - LLM Context Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 128 128" fill="none">
+            <circle cx="64" cy="64" r="42" stroke="#38bdf8" stroke-width="10" stroke-dasharray="264" stroke-dashoffset="66"/>
+            <polygon points="64,36 84,47 84,71 64,82 44,71 44,47" fill="#0284c7" fill-opacity="0.3" stroke="#818cf8" stroke-width="4"/>
+            <path d="M50 64 L58 56 L66 68 L78 52" stroke="#4ade80" stroke-width="6" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>OmniContext</h1>
+          <span class="version-tag">v1.0.0</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="platform-badge" id="platformBadge">Generic</div>
+        <div class="toggle-switch-container">
+          <span class="toggle-label" id="toggleLabel">ON</span>
+          <label class="switch">
+            <input type="checkbox" id="extensionToggle" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Dashboard -->
+    <main class="popup-main" id="popupMain">
+      <!-- Bloat Score Gauge Card -->
+      <section class="card bloat-card" id="bloatCard">
+        <div class="bloat-ring-container">
+          <svg class="bloat-ring" width="100" height="100" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+            <circle class="ring-fill" id="bloatRingFill" cx="50" cy="50" r="40"></circle>
+          </svg>
+          <div class="bloat-center">
+            <span class="bloat-score-value" id="bloatScoreVal">0</span>
+            <span class="bloat-score-label">BLOAT SCORE</span>
+          </div>
+        </div>
+        <div class="bloat-status-info">
+          <div class="status-pill" id="statusPill">
+            <span class="status-dot" id="statusDot"></span>
+            <span class="status-text" id="statusText">Optimal</span>
+          </div>
+          <p class="status-desc" id="statusDesc">Optimal context retention and response speed.</p>
+        </div>
+      </section>
+
+      <!-- Token Capacity Progress -->
+      <section class="card capacity-card">
+        <div class="card-header">
+          <span>Context Window Usage</span>
+          <span class="capacity-ratio" id="capacityRatio">0 / 24,000</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="capacityFill" style="width: 0%;"></div>
+        </div>
+        <div class="capacity-footer">
+          <span id="capacityPercentText">0% Used</span>
+          <span id="remainingTokensText">24,000 Remaining</span>
+        </div>
+      </section>
+
+      <!-- Detailed Metrics Grid -->
+      <section class="metrics-grid">
+        <div class="metric-item">
+          <span class="metric-val" id="metricTotalTokens">0</span>
+          <span class="metric-lbl">Total Tokens</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val" id="metricTurns">0</span>
+          <span class="metric-lbl">Conversation Turns</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val" id="metricCodeDensity">0%</span>
+          <span class="metric-lbl">Code Density</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-val" id="metricWords">0</span>
+          <span class="metric-lbl">Total Words</span>
+        </div>
+      </section>
+
+      <!-- User vs Assistant Distribution -->
+      <section class="card distribution-card">
+        <div class="card-header">
+          <span>Token Distribution</span>
+          <span class="dist-ratio" id="distRatioText">50% User / 50% Assistant</span>
+        </div>
+        <div class="dist-bar">
+          <div class="user-bar" id="userBar" style="width: 50%;"></div>
+          <div class="assistant-bar" id="assistantBar" style="width: 50%;"></div>
+        </div>
+        <div class="dist-legend">
+          <span class="legend-user">User (<span id="userTokensVal">0</span>)</span>
+          <span class="legend-assistant">Assistant (<span id="assistantTokensVal">0</span>)</span>
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <section class="actions-section">
+        <button class="btn btn-primary" id="btnMigrate">
+          Prepare Context Summary
+        </button>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="btnCopyPrompt">
+            Copy Prompt
+          </button>
+          <button class="btn btn-secondary" id="btnRescan">
+            Rescan Page
+          </button>
+        </div>
+      </section>
+
+      <!-- Simulation Test Mode toggle -->
+      <div class="sim-toggle-row">
+        <label for="simSelect">Simulate Platform:</label>
+        <select id="simSelect">
+          <option value="auto">Auto Detect Tab</option>
+          <option value="chatgpt">ChatGPT (128k limit)</option>
+          <option value="claude">Claude 3.5 (200k limit)</option>
+          <option value="gemini">Gemini 1.5 (1M limit)</option>
+          <option value="deepseek">DeepSeek (64k limit)</option>
+          <option value="kimi">Kimi (128k limit)</option>
+        </select>
+      </div>
+    </main>
+
+    <!-- Disabled State Overlay -->
+    <div class="disabled-overlay" id="disabledOverlay" style="display: none;">
+      <div class="disabled-message">
+        <h3>Monitoring Disabled</h3>
+        <p>Enable the toggle switch above to resume LLM context tracking.</p>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="popupToast" style="display: none;"></div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

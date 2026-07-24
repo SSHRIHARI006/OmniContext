@@ -1,0 +1,258 @@
+/* OmniContext Floating HUD Shadow DOM Styles */
+
+:host {
+  all: initial;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+*, *:before, *:after {
+  box-sizing: border-box;
+}
+
+.omni-hud-root {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2147483647; /* Highest possible layer */
+  user-select: none;
+  font-size: 13px;
+  color: #f8fafc;
+  direction: ltr;
+}
+
+/* Glassmorphism Badge Shell */
+.omni-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 30px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.15);
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.omni-badge:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.3);
+}
+
+.omni-badge:active {
+  cursor: grabbing;
+}
+
+.omni-badge-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.omni-badge-text {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.omni-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Status Indicator Dot */
+.omni-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.omni-status-optimal {
+  color: #4ade80;
+  background-color: #4ade80;
+}
+
+.omni-status-dense {
+  color: #facc15;
+  background-color: #facc15;
+}
+
+.omni-status-bloated {
+  color: #f87171;
+  background-color: #f87171;
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(248, 113, 113, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+}
+
+/* Expanded Card View */
+.omni-card {
+  margin-top: 10px;
+  width: 310px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: omni-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes omni-fade-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.omni-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+
+.omni-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.omni-card-platform {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Metric Bars */
+.omni-metric-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.omni-metric-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.omni-progress-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.omni-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease, background-color 0.4s ease;
+}
+
+/* Grid Metrics */
+.omni-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.omni-stat-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.omni-stat-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.omni-stat-lbl {
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* Migration Alert Box */
+.omni-alert-box {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 11px;
+  color: #fca5a5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.omni-btn {
+  background: linear-gradient(135deg, #0284c7, #4f46e5);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.omni-btn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.omni-btn:active {
+  transform: translateY(0);
+}
+
+.omni-btn-danger {
+  background: linear-gradient(135deg, #dc2626, #991b1b);
+}
+
+.omni-btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.omni-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

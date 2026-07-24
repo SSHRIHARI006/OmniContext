@@ -1,0 +1,25 @@
+{
+  "name": "omnicontext-extension",
+  "version": "1.0.0",
+  "description": "Universal LLM Context & Bloat Monitor WebExtension",
+  "main": "src/background/serviceWorker.js",
+  "scripts": {
+    "test": "echo \"OmniContext V1.0.0 Ready\"",
+    "package": "zip -r omnicontext-v1.0.0.zip manifest.json src/ README.md"
+  },
+  "keywords": [
+    "chrome-extension",
+    "firefox-addon",
+    "llm",
+    "token-counter",
+    "context-bloat",
+    "chatgpt",
+    "claude",
+    "gemini",
+    "deepseek",
+    "kimi",
+    "qwen"
+  ],
+  "author": "OmniContext Team",
+  "license": "MIT"
+}

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniContext - Live LLM Simulator & Test Harness</title>
+  <style>
+    :root {
+      --bg-main: #0b0f19;
+      --bg-panel: #131b2e;
+      --bg-msg-user: #1e293b;
+      --bg-msg-assistant: #0f172a;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-cyan: #38bdf8;
+      --accent-purple: #a855f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar controls */
+    .sidebar {
+      width: 320px;
+      background: var(--bg-panel);
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sidebar h2 {
+      font-size: 16px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+    select, button, input {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #334155; }
+    .btn-action { background: linear-gradient(135deg, #0284c7, #4f46e5); border: none; font-weight: 600; }
+    .btn-action:hover { filter: brightness(1.15); }
+
+    /* Main Chat Simulation Workspace */
+    .chat-workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-main);
+    }
+
+    .chat-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-container {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Message bubbles matching selectors */
+    article.chat-message {
+      padding: 16px;
+      border-radius: 12px;
+      max-width: 85%;
+      line-height: 1.6;
+      font-size: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    article.user {
+      align-self: flex-end;
+      background: var(--bg-msg-user);
+      border-color: rgba(56, 189, 248, 0.2);
+    }
+
+    article.assistant {
+      align-self: flex-start;
+      background: var(--bg-msg-assistant);
+    }
+
+    pre {
+      background: #020617;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #1e293b;
+      margin-top: 8px;
+      overflow-x: auto;
+      font-family: monospace;
+      color: #38bdf8;
+    }
+
+    /* Input area */
+    .chat-input-box {
+      padding: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      gap: 12px;
+    }
+
+    #prompt-textarea {
+      flex: 1;
+      height: 60px;
+      resize: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Controls Sidebar -->
+  <aside class="sidebar">
+    <h2>OmniContext Test Simulator</h2>
+    <p style="font-size: 11px; color: #94a3b8;">Simulate live conversation turns, token expansion, and context bloat score thresholds.</p>
+
+    <div class="control-group">
+      <label for="platformSim">Active Platform Schema:</label>
+      <select id="platformSim">
+        <option value="chatgpt.com">ChatGPT (chatgpt.com)</option>
+        <option value="claude.ai">Claude (claude.ai)</option>
+        <option value="gemini.google.com">Gemini (gemini.google.com)</option>
+        <option value="chat.deepseek.com">DeepSeek (chat.deepseek.com)</option>
+      </select>
+    </div>
+
+    <button class="btn-action" id="btnAddTurn">💬 Add Conversation Turn</button>
+    <button class="btn-action" id="btnAddCodeTurn" style="background: linear-gradient(135deg, #a855f7, #6366f1);">💻 Add Heavy Code Block</button>
+    <button class="btn-action" id="btnSimulateStream" style="background: linear-gradient(135deg, #10b981, #059669);">⚡ Stream 5k Tokens (Bloat Test)</button>
+    <button id="btnClear">🗑️ Clear Chat</button>
+
+    <div style="margin-top: auto; font-size: 11px; color: #64748b;">
+      <p>💡 Tip: Load unpacked extension in chrome://extensions to see the floating Shadow DOM HUD live on this page!</p>
+    </div>
+  </aside>
+
+  <!-- Workspace -->
+  <main class="chat-workspace">
+    <header class="chat-header">
+      <h3 id="currentPlatformHeader">ChatGPT Session</h3>
+      <span style="font-size: 12px; color: #38bdf8;">Status: Active Stream</span>
+    </header>
+
+    <div class="chat-container" id="chatContainer">
+      <article class="chat-message user" data-message-author-role="user">
+        Hi! Can you help me design and implement OmniContext extension?
+      </article>
+      <article class="chat-message assistant" data-message-author-role="assistant">
+        Hello! I can definitely help with that. OmniContext is a universal browser extension to measure context window capacity, code density, and context bloat score.
+        <pre><code>interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  codeText: string;
+}</code></pre>
+      </article>
+    </div>
+
+    <div class="chat-input-box">
+      <textarea id="prompt-textarea" placeholder="Send a message to simulator..."></textarea>
+      <button class="btn-action" id="btnSend">Send</button>
+    </div>
+  </main>
+
+  <script>
+    const chatContainer = document.getElementById('chatContainer');
+    const promptInput = document.getElementById('prompt-textarea');
+
+    document.getElementById('btnAddTurn').addEventListener('click', () => {
+      addTurn('Can you optimize the DOM extraction algorithms?', 
+        'Here is the optimized DOM parsing algorithm with strict debouncing:\n' + 'Sample response text. '.repeat(40));
+    });
+
+    document.getElementById('btnAddCodeTurn').addEventListener('click', () => {
+      addTurn('Show me full implementation of the token engine.', 
+        'Here is the complete Byte-Pair Encoding subword implementation:\n<pre><code>' + 
+        'export class TokenEngine {\n  static countTokens(text) {\n    return text.length / 3.5;\n  }\n}\n'.repeat(15) + 
+        '</code></pre>');
+    });
+
+    document.getElementById('btnSimulateStream').addEventListener('click', () => {
+      addTurn('Generate massive context log for memory stress test.', 
+        'Stress testing memory capacity with heavy payload...\n' + 
+        'Large context stream token simulation data block. '.repeat(350) + 
+        '\n<pre><code>' + 'const heavyDataArray = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];\n'.repeat(50) + '</code></pre>');
+    });
+
+    document.getElementById('btnClear').addEventListener('click', () => {
+      chatContainer.innerHTML = '';
+    });
+
+    document.getElementById('btnSend').addEventListener('click', () => {
+      const text = promptInput.value.trim();
+      if (!text) return;
+      addTurn(text, 'Simulated assistant response to: "' + text + '"');
+      promptInput.value = '';
+    });
+
+    function addTurn(userText, assistantText) {
+      const uMsg = document.createElement('article');
+      uMsg.className = 'chat-message user';
+      uMsg.setAttribute('data-message-author-role', 'user');
+      uMsg.innerText = userText;
+
+      const aMsg = document.createElement('article');
+      aMsg.className = 'chat-message assistant';
+      aMsg.setAttribute('data-message-author-role', 'assistant');
+      aMsg.innerHTML = assistantText;
+
+      chatContainer.appendChild(uMsg);
+      chatContainer.appendChild(aMsg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+  </script>
+
+  <!-- Inject bundled content script for direct browser testing without extension loaded -->
+  <script src="../src/content/content.bundle.js"></script>
+
+</body>
+</html>
