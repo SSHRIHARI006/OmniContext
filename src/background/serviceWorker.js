@@ -1,10 +1,10 @@
 /**
  * OmniContext Background Service Worker (Cross-Browser Manifest V3: Chrome, Firefox, Edge, Brave)
  * Manages extension state, badge updates, and tab communications.
- * Uses webextension-polyfill so `browser.*` works identically everywhere.
+ * Uses the native browser/chrome extension API namespace.
  */
 
-import browser from 'webextension-polyfill';
+const browser = globalThis.browser || globalThis.chrome;
 
 browser.runtime.onInstalled.addListener(() => {
   console.log('[OmniContext] Extension installed successfully (cross-browser).');

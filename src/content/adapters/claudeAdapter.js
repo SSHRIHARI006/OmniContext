@@ -61,7 +61,13 @@ export class ClaudeAdapter extends BaseAdapter {
       '[data-testid*="assistant-message"]'
     ];
 
-    const elements = document.querySelectorAll(selectors.join(', '));
+    const elements = this.getUniqueMessageElements([
+      ...selectors,
+      '[data-testid*="message"]',
+      '[data-testid*="turn"]',
+      'main [role="article"]',
+      'main [role="listitem"]'
+    ]);
 
     elements.forEach((el, index) => {
       let role = 'assistant';

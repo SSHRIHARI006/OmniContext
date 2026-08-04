@@ -67,7 +67,13 @@ export class GeminiAdapter extends BaseAdapter {
       '[data-testid*="assistant-response"]'
     ];
 
-    const elements = document.querySelectorAll(querySelectors.join(', '));
+    const elements = this.getUniqueMessageElements([
+      ...querySelectors,
+      '[data-testid*="message"]',
+      '[data-message-id]',
+      'main [role="article"]',
+      'main [role="listitem"]'
+    ]);
 
     elements.forEach((el, index) => {
       let role = 'assistant';

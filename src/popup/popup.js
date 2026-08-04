@@ -4,7 +4,8 @@
  * Switch, Storage Sync, and the SPEC-1 combined Health / Bloat / Rot display.
  */
 
-import browser from 'webextension-polyfill';
+const browser = globalThis.browser || globalThis.chrome;
+
 import { MetricsCalculator } from '../core/metricsCalculator.js';
 import { MigrationPromptEngine } from '../core/migrationPrompt.js';
 import { ModelRegistry } from '../core/modelRegistry.js';
@@ -35,6 +36,10 @@ class PopupController {
     document.getElementById('btnCopyPrompt').addEventListener('click', () => this.handleCopyPrompt());
     document.getElementById('btnRescan').addEventListener('click', () => this.handleRescan());
 
+    const debugToggle = document.getElementById('debugToggle');
+    debugToggle.addEventListener('change', (event) => this.handleDebugToggle(event.target.checked));
+    this.loadDebugState();
+
     document.getElementById('simSelect').addEventListener('change', (e) => {
       if (e.target.value !== 'auto') {
         this.runSimulation(e.target.value);
@@ -52,6 +57,28 @@ class PopupController {
       this.isEnabled = true;
     }
     this.updateToggleUI(this.isEnabled);
+  }
+
+  async loadDebugState() {
+    try {
+      const result = await browser.storage.local.get('debugEnabled');
+      document.getElementById('debugToggle').checked = result?.debugEnabled === true;
+    } catch (e) {
+      document.getElementById('debugToggle').checked = false;
+    }
+  }
+
+  async handleDebugToggle(enabled) {
+    try {
+      await browser.storage.local.set({ debugEnabled: enabled });
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      if (tabs?.[0]?.id) {
+        await browser.tabs.sendMessage(tabs[0].id, { action: 'SET_DEBUG_STATE', enabled: !!enabled });
+      }
+      this.showToast(enabled ? 'Debug logging enabled' : 'Debug logging disabled');
+    } catch (e) {
+      this.showToast('Could not update debug logging');
+    }
   }
 
   async handleToggleChange(enabled) {
@@ -100,6 +127,7 @@ class PopupController {
       if (activeTab && activeTab.id) {
         const response = await browser.tabs.sendMessage(activeTab.id, { action: 'GET_METRICS' });
         if (response && response.metrics) {
+          this.setDataMode('live');
           this.updateUI(response.metrics, response.platformKey, response.modelName);
           return;
         }
@@ -116,16 +144,20 @@ class PopupController {
     try {
       const result = await browser.storage.local.get('activeMetrics');
       if (result && result.activeMetrics && result.activeMetrics.metrics) {
+        this.setDataMode('live');
         this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
       } else {
+        this.showToast('No live data — showing simulation');
         this.runSimulation('gemini');
       }
     } catch (e) {
+      this.showToast('No live data — showing simulation');
       this.runSimulation('gemini');
     }
   }
 
   runSimulation(platformKey = 'gemini') {
+    this.setDataMode('simulation');
     const modelInfo = ModelRegistry.getModelInfo(platformKey);
 
     const mockMessages = [
@@ -143,6 +175,19 @@ class PopupController {
     });
 
     this.updateUI(metrics, modelInfo.platform, modelInfo.name);
+  }
+
+  setDataMode(mode) {
+    const badge = document.getElementById('dataModeBadge');
+    if (!badge) return;
+    const isSimulation = mode === 'simulation';
+    badge.innerText = isSimulation ? 'Simulation / No live data' : 'Live data';
+    badge.style.display = 'inline-block';
+    if (!isSimulation) {
+      badge.style.background = 'rgba(74, 222, 128, 0.15)';
+      badge.style.color = 'var(--color-optimal)';
+      badge.style.borderColor = 'rgba(74, 222, 128, 0.35)';
+    }
   }
 
   updateUI(metrics, platformKey = 'generic', modelName = '') {

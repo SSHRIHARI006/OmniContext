@@ -48,6 +48,7 @@ export class ShadowContainer {
 
         .omni-badge {
           display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+          touch-action: none;
           background: rgba(15, 23, 42, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 30px;
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(56, 189, 248, 0.2);
@@ -98,7 +99,7 @@ export class ShadowContainer {
 
         @keyframes omni-fade-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
-        .omni-card-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px; cursor: grab; }
+        .omni-card-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px; cursor: grab; touch-action: none; }
         .omni-card-header:active { cursor: grabbing; }
         .omni-card-title { font-size: 13px; font-weight: 700; background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .omni-card-platform { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 600; text-transform: uppercase; }
@@ -319,40 +320,79 @@ export class ShadowContainer {
     const cardHeader = this.shadowRoot.getElementById('omni-card-header');
     if (!root) return;
 
-    let isMouseDown = false;
-    let startX = 0, startY = 0;
-    let initialLeft = 0, initialTop = 0;
+    const doc = this.host.ownerDocument || document;
+    let activePointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
+    let captureTarget = null;
 
-    const onMouseDown = (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest('.omni-close-btn')) return;
-      isMouseDown = true;
+    const stopDragging = (event) => {
+      if (activePointerId === null) return;
+      if (event && event.pointerId !== undefined && event.pointerId !== activePointerId) return;
+
+      if (captureTarget && typeof captureTarget.releasePointerCapture === 'function' &&
+          captureTarget.hasPointerCapture(activePointerId)) {
+        captureTarget.releasePointerCapture(activePointerId);
+      }
+
+      captureTarget = null;
+      activePointerId = null;
+      this.wasDragging = this.wasDragging || false;
+    };
+
+    const onPointerDown = (event) => {
+      if (event.button !== 0 || activePointerId !== null) return;
+      if (event.target.closest('.omni-close-btn')) return;
+
+      activePointerId = event.pointerId;
       this.wasDragging = false;
-      startX = e.clientX;
-      startY = e.clientY;
+      startX = event.clientX;
+      startY = event.clientY;
       const rect = root.getBoundingClientRect();
       initialLeft = rect.left;
       initialTop = rect.top;
       root.style.right = 'auto';
       root.style.left = `${initialLeft}px`;
       root.style.top = `${initialTop}px`;
-      e.preventDefault();
+
+      if (typeof event.currentTarget.setPointerCapture === 'function') {
+        captureTarget = event.currentTarget;
+        captureTarget.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
     };
 
-    if (badge) badge.addEventListener('mousedown', onMouseDown);
-    if (cardHeader) cardHeader.addEventListener('mousedown', onMouseDown);
+    const onPointerMove = (event) => {
+      if (activePointerId === null || event.pointerId !== activePointerId) return;
 
-    window.addEventListener('mousemove', (e) => {
-      if (!isMouseDown) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this.wasDragging = true;
       const newLeft = Math.max(10, Math.min(window.innerWidth - 100, initialLeft + dx));
       const newTop = Math.max(10, Math.min(window.innerHeight - 50, initialTop + dy));
       root.style.left = `${newLeft}px`;
       root.style.top = `${newTop}px`;
-    });
+    };
 
-    window.addEventListener('mouseup', () => { isMouseDown = false; });
+    const onPointerUp = (event) => stopDragging(event);
+
+    if (badge) {
+      badge.addEventListener('pointerdown', onPointerDown);
+      badge.addEventListener('pointermove', onPointerMove);
+      badge.addEventListener('pointerup', onPointerUp);
+      badge.addEventListener('pointercancel', onPointerUp);
+    }
+    if (cardHeader) {
+      cardHeader.addEventListener('pointerdown', onPointerDown);
+      cardHeader.addEventListener('pointermove', onPointerMove);
+      cardHeader.addEventListener('pointerup', onPointerUp);
+      cardHeader.addEventListener('pointercancel', onPointerUp);
+    }
+
+    doc.addEventListener('pointermove', onPointerMove);
+    doc.addEventListener('pointerup', onPointerUp);
+    doc.addEventListener('pointercancel', onPointerUp);
   }
 }

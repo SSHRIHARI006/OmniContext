@@ -53,7 +53,14 @@ export class ChatGPTAdapter extends BaseAdapter {
 
   extractMessages() {
     const messages = [];
-    const elements = document.querySelectorAll('[data-message-author-role], article');
+    const elements = this.getUniqueMessageElements([
+      '[data-message-author-role]',
+      '[data-testid*="conversation-turn"]',
+      '[data-testid*="message"]',
+      'article',
+      'main [role="listitem"]',
+      'main [role="article"]'
+    ]);
 
     elements.forEach((el, index) => {
       let role = el.getAttribute('data-message-author-role');

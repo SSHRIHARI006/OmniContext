@@ -77,6 +77,28 @@ export class BaseAdapter {
   }
 
   /**
+   * Returns unique top-level message candidates from a selector cascade.
+   * Nested selectors are removed when an already-selected ancestor contains
+   * them, preventing one DOM message from being counted multiple times.
+   * @param {string[]} selectors
+   * @returns {HTMLElement[]}
+   */
+  getUniqueMessageElements(selectors) {
+    const elements = [];
+    const seen = new Set();
+
+    for (const selector of selectors) {
+      document.querySelectorAll(selector).forEach((element) => {
+        if (seen.has(element)) return;
+        seen.add(element);
+        elements.push(element);
+      });
+    }
+
+    return elements.filter((element) => !elements.some((other) => other !== element && other.contains(element)));
+  }
+
+  /**
    * Scrapes chat messages from the DOM.
    * @returns {Array<{ id: string, role: 'user'|'assistant', text: string, codeText: string, timestamp: number }>}
    */

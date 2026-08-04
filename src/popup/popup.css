@@ -96,6 +96,18 @@ body {
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
+.data-mode-badge {
+  display: none;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--color-degrading);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
 /* Toggle Switch Styling */
 .toggle-switch-container {
   display: flex;
@@ -513,6 +525,10 @@ input:checked + .slider:before {
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 11px;
+}
+
+.debug-toggle-row input {
+  accent-color: var(--accent-cyan);
 }
 
 /* Toast */

@@ -27,7 +27,10 @@ function buildManifest(base, browser) {
   const manifest = JSON.parse(JSON.stringify(base));
 
   if (browser === 'chrome') {
-    manifest.background = { service_worker: 'src/background/serviceWorker.js' };
+    manifest.background = {
+      service_worker: 'src/background/serviceWorker.js',
+      type: 'module'
+    };
     delete manifest.browser_specific_settings;
     // Chromium supports "world": "MAIN" for the network model interceptor.
     manifest.content_scripts = [

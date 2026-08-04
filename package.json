@@ -28,7 +28,5 @@
   "author": "OmniContext Team",
   "license": "MIT",
   "devDependencies": {},
-  "dependencies": {
-    "webextension-polyfill": "^0.12.0"
-  }
+  "dependencies": {}
 }

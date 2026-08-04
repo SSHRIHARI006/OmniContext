@@ -5,10 +5,8 @@
  * sync, listens for network-intercepted model IDs, and renders the Shadow DOM
  * overlay HUD.
  *
- * The content bundle intentionally does not vendor webextension-polyfill:
- * it can run before the polyfill setup script, and the extApi fallback below
- * handles the browser/chrome split. The polyfill is used in the popup,
- * background worker, and service worker where it is safe.
+ * The content bundle uses the native browser/chrome API fallback so it can
+ * run directly in every generated browser build.
  */
 
 import { BaseAdapter } from './adapters/baseAdapter.js';
@@ -39,6 +37,7 @@ export class ContentOrchestrator {
     this.latestMetrics = null;
     this.modelInfo = null;
     this.isEnabled = true;
+    this.debugEnabled = false;
 
     this.init();
   }
@@ -48,6 +47,7 @@ export class ContentOrchestrator {
     this.shadowUI = new ShadowContainer(() => this.handlePrepareSummary());
     this.setupMessageListeners();
     this.setupStorageListeners();
+    await this.loadDebugState();
     this.setupInterceptorListeners();
     this.setupInterceptorInjection();
 
@@ -56,6 +56,21 @@ export class ContentOrchestrator {
       this.performScan();
       this.setupMutationObserver();
     }
+  }
+
+  async loadDebugState() {
+    if (!extApi?.storage?.local) return;
+    try {
+      const result = await extApi.storage.local.get('debugEnabled');
+      this.debugEnabled = result?.debugEnabled === true;
+    } catch (error) {
+      this.debugEnabled = false;
+    }
+  }
+
+  debugLog(message, details = {}) {
+    if (!this.debugEnabled) return;
+    console.debug(`[OmniContext] ${message}`, details);
   }
 
   async checkEnabledState() {
@@ -156,6 +171,12 @@ export class ContentOrchestrator {
     try {
       const messages = this.adapter.extractMessages();
       this.modelInfo = this.adapter.getDetectedModel();
+      this.debugLog('Scan complete', {
+        adapter: this.adapter.platformKey,
+        messageCount: messages.length,
+        model: this.modelInfo.name,
+        modelSource: this.modelInfo.source
+      });
 
       const metrics = MetricsCalculator.calculateMetrics(messages, {
         hardLimitTokens: this.modelInfo.limit,
@@ -169,6 +190,7 @@ export class ContentOrchestrator {
       this.syncStateToBackground(metrics);
     } catch (err) {
       console.debug('[OmniContext] Content scan error:', err);
+      this.debugLog('Scan failed', { errorName: err?.name || 'Error' });
     }
   }
 
@@ -247,7 +269,10 @@ export class ContentOrchestrator {
   setupMessageListeners() {
     if (extApi && extApi.runtime && extApi.runtime.onMessage) {
       extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'SET_EXTENSION_STATE') {
+        if (request.action === 'SET_DEBUG_STATE') {
+          this.debugEnabled = !!request.enabled;
+          sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });
+        } else if (request.action === 'SET_EXTENSION_STATE') {
           this.isEnabled = !!request.enabled;
           this.shadowUI.setVisible(this.isEnabled);
           if (this.isEnabled) {

@@ -77,7 +77,7 @@ Cross-browser compatible with **Firefox**, **Chrome**, **Edge**, **Brave**, **Op
 
 ### Build
 ```bash
-npm install            # installs webextension-polyfill
+npm install            # installs development dependencies (none required at runtime)
 npm run build          # bundle content script + build both dist/chrome and dist/firefox
 npm run build:chrome   # dist/chrome/ only
 npm run build:firefox  # dist/firefox/ only
@@ -117,4 +117,6 @@ The build produces:
 ## Development
 - Source lives in ES modules under `src/`; the manifest loads the generated `src/content/content.bundle.js`.
 - Run `npm run bundle:content` after editing content-script modules to regenerate the bundle.
-- Specifications live in `.specs/` (SPEC-1 design → SPEC-2 implementation log → SPEC-3 review → SPEC-4 fixes).
+- Open the popup's **Debug logging** checkbox to persist diagnostics; logs include adapter/model/count metadata only, never chat text.
+- If the popup cannot reach a live content script, it displays **Simulation / No live data** instead of silently presenting synthetic metrics.
+- Specifications live in `.specs/` (SPEC-1 design → SPEC-2 implementation log → SPEC-3 review → SPEC-4 fixes → SPEC-5 audit → SPEC-6 implementation).
