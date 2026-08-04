@@ -3,10 +3,10 @@
  * Provides structured migration prompt generation and insertion logic into LLM web UI input textareas/contenteditables.
  */
 
-export const MIGRATION_PROMPT_TEXT = 
+const MIGRATION_PROMPT_TEXT = 
   "We are reaching memory context limits in this session. Please generate a structured Markdown summary of our discussion, including: key requirements, established architectural decisions, ongoing tasks, and critical code snippets so I can paste it into a fresh session.";
 
-export class MigrationPromptEngine {
+class MigrationPromptEngine {
   /**
    * Returns standard structured summary prompt text.
    * @returns {string}
@@ -77,3 +77,6 @@ export class MigrationPromptEngine {
     return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   }
 }
+
+OmniContext.MIGRATION_PROMPT_TEXT = MIGRATION_PROMPT_TEXT;
+OmniContext.MigrationPromptEngine = MigrationPromptEngine;

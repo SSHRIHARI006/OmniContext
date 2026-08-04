@@ -3,9 +3,7 @@
  * Scrapes Qwen Max / 2.5 conversations (128k context window).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class QwenAdapter extends BaseAdapter {
+class QwenAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'qwen',
@@ -46,3 +44,5 @@ export class QwenAdapter extends BaseAdapter {
     return messages;
   }
 }
+
+OmniContext.QwenAdapter = QwenAdapter;

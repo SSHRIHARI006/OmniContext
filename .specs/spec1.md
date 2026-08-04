@@ -1,6 +1,6 @@
 # SPEC-1: OmniContext v1.1 — Cross-Browser, Accurate Model Detection & Bloat/Rot Overhaul
 
-**Spec Version:** 1.1.0  
+**Spec Version:** 1.2.0  
 **Date:** 2026-08-04  
 **Status:** Draft — Awaiting Review  
 

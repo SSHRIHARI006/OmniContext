@@ -6,9 +6,7 @@
  * DOM scraping).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class GeminiAdapter extends BaseAdapter {
+class GeminiAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'gemini',
@@ -105,3 +103,5 @@ export class GeminiAdapter extends BaseAdapter {
            document.querySelector('div[contenteditable="true"]');
   }
 }
+
+OmniContext.GeminiAdapter = GeminiAdapter;

@@ -83,7 +83,7 @@ Deleted `SPEC.md` from the repo. `.specs/` is now the canonical spec directory (
 ## 4. 🟢 Docs & Housekeeping Done
 
 ### DOC-1 — README rewritten for v1.1 ✅
-`README.md` — title bumped to V1.1.0; architecture diagram now shows the network interceptor, 5-signal Health/Bloat/Rot calculator, and 4 status tiers; added build commands (`npm run build`, `build:chrome`, `build:firefox`, `test`, `package`); loading instructions now point at `dist/chrome/` and `dist/firefox/`; model list updated (GPT-4.1, o3, Claude 4, Gemini 2.5, etc.).
+`README.md` — title bumped to V1.2.0; architecture diagram now shows the network interceptor, 5-signal Health/Bloat/Rot calculator, and 4 status tiers; added build commands (`npm run build`, `build:chrome`, `build:firefox`, `test`, `package`); loading instructions now point at `dist/chrome/` and `dist/firefox/`; model list updated (GPT-4.1, o3, Claude 4, Gemini 2.5, etc.).
 
 ### DOC-2 — Old root `manifest.json` removed ✅
 Deleted the stale v1.0 manifest; loading is now only from `dist/` (generated from `manifest.base.json`).
@@ -92,7 +92,7 @@ Deleted the stale v1.0 manifest; loading is now only from `dist/` (generated fro
 Deleted `omnicontext-v1.0.0.zip` from disk and git tracking (`*.zip` already in `.gitignore`).
 
 ### DOC-4 — Dynamic version in package script ✅
-`package.json` — `omnicontext-v1.1.0-chrome.zip` → `omnicontext-v${npm_package_version}-chrome.zip` (same for firefox), so version bumps no longer need manual script edits.
+`package.json` — `omnicontext-v1.2.0-chrome.zip` → `omnicontext-v${npm_package_version}-chrome.zip` (same for firefox), so version bumps no longer need manual script edits.
 
 ---
 

@@ -3,9 +3,7 @@
  * Fallback DOM extractor using heuristics for unrecognized LLM web UIs.
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class GenericAdapter extends BaseAdapter {
+class GenericAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'generic',
@@ -74,3 +72,5 @@ export class GenericAdapter extends BaseAdapter {
     return messages;
   }
 }
+
+OmniContext.GenericAdapter = GenericAdapter;

@@ -9,19 +9,18 @@
  * run directly in every generated browser build.
  */
 
-import { BaseAdapter } from './adapters/baseAdapter.js';
-import { ChatGPTAdapter } from './adapters/chatgptAdapter.js';
-import { ClaudeAdapter } from './adapters/claudeAdapter.js';
-import { GeminiAdapter } from './adapters/geminiAdapter.js';
-import { DeepSeekAdapter } from './adapters/deepseekAdapter.js';
-import { KimiAdapter } from './adapters/kimiAdapter.js';
-import { QwenAdapter } from './adapters/qwenAdapter.js';
-import { GenericAdapter } from './adapters/genericAdapter.js';
-
-import { MetricsCalculator } from '../core/metricsCalculator.js';
-import { MigrationPromptEngine } from '../core/migrationPrompt.js';
-import { ModelRegistry } from '../core/modelRegistry.js';
-import { ShadowContainer } from './ui/shadowContainer.js';
+const {
+  ChatGPTAdapter,
+  ClaudeAdapter,
+  GeminiAdapter,
+  DeepSeekAdapter,
+  KimiAdapter,
+  QwenAdapter,
+  GenericAdapter,
+  MetricsCalculator,
+  MigrationPromptEngine,
+  ShadowContainer
+} = OmniContext;
 
 const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 
@@ -29,7 +28,7 @@ const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'un
 // interceptor is injected dynamically there via a web-accessible script tag.
 const IS_FIREFOX = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent || '');
 
-export class ContentOrchestrator {
+class ContentOrchestrator {
   constructor() {
     this.adapter = null;
     this.shadowUI = null;
@@ -300,3 +299,5 @@ if (document.readyState === 'loading') {
 } else {
   new ContentOrchestrator();
 }
+
+OmniContext.ContentOrchestrator = ContentOrchestrator;

@@ -5,9 +5,7 @@
  * interceptor first, then resilient DOM scraping).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class ClaudeAdapter extends BaseAdapter {
+class ClaudeAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'claude',
@@ -98,3 +96,5 @@ export class ClaudeAdapter extends BaseAdapter {
            document.querySelector('div[contenteditable="true"]');
   }
 }
+
+OmniContext.ClaudeAdapter = ClaudeAdapter;

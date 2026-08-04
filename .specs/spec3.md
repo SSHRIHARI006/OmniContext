@@ -218,7 +218,7 @@ Still says `V1.0.0` in the title and describes the old architecture (no mention 
 network interceptor, 5-signal bloat/rot, 4 tiers, or build pipeline).
 
 **Updates needed:**
-- Version to `V1.1.0`
+- Version to `V1.2.0`
 - Add network interceptor to architecture diagram
 - Update "Metrics & Bloat Calculator" description to mention Health/Bloat/Rot
 - Add build commands (`npm run build`, `npm run build:chrome`, `npm run build:firefox`)
@@ -251,7 +251,7 @@ git rm --cached omnicontext-v1.0.0.zip
 
 **File:** `package.json:12`
 
-The package script hardcodes `omnicontext-v1.1.0-chrome.zip`. This will need manual
+The package script hardcodes `omnicontext-v1.2.0-chrome.zip`. This will need manual
 updates every version bump.
 
 **Improvement:** Use `$npm_package_version` in the script:

@@ -30,3 +30,6 @@ pnpm-debug.log*
 .env.*
 !.env.example
 .commandcode/
+
+# Local release archives
+.releases/

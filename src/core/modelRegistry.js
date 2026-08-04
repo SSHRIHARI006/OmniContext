@@ -8,7 +8,7 @@
  * Bloat/Rot formula in MetricsCalculator rather than an arbitrary soft cap.
  */
 
-export class ModelRegistry {
+class ModelRegistry {
   static MODELS = [
     // === Gemini ===
     { pattern: /gemini.*2\.5.*pro/i, name: 'Gemini 2.5 Pro', limit: 1000000, platform: 'gemini', multiplier: 1.05 },
@@ -121,3 +121,5 @@ export class ModelRegistry {
     return tokens.toLocaleString();
   }
 }
+
+OmniContext.ModelRegistry = ModelRegistry;

@@ -20,7 +20,7 @@
         </div>
         <div class="brand-text">
           <h1>OmniContext</h1>
-          <span class="version-tag">v1.1.0</span>
+          <span class="version-tag">v1.2.0</span>
         </div>
       </div>
 
@@ -161,6 +161,11 @@
     <div class="toast" id="popupToast" style="display: none;"></div>
   </div>
 
-  <script type="module" src="popup.js"></script>
+  <script src="../content/omniNamespace.js"></script>
+  <script src="../core/modelRegistry.js"></script>
+  <script src="../core/tokenEngine.js"></script>
+  <script src="../core/metricsCalculator.js"></script>
+  <script src="../core/migrationPrompt.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>

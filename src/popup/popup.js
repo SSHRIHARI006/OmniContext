@@ -5,10 +5,7 @@
  */
 
 const browser = globalThis.browser || globalThis.chrome;
-
-import { MetricsCalculator } from '../core/metricsCalculator.js';
-import { MigrationPromptEngine } from '../core/migrationPrompt.js';
-import { ModelRegistry } from '../core/modelRegistry.js';
+const { MetricsCalculator, MigrationPromptEngine, ModelRegistry } = globalThis.OmniContext;
 
 class PopupController {
   constructor() {

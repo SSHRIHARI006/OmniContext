@@ -3,9 +3,7 @@
  * Scrapes Kimi Moonshot conversations (128k - 2M context window).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class KimiAdapter extends BaseAdapter {
+class KimiAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'kimi',
@@ -46,3 +44,5 @@ export class KimiAdapter extends BaseAdapter {
     return messages;
   }
 }
+
+OmniContext.KimiAdapter = KimiAdapter;

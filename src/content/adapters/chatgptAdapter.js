@@ -5,9 +5,7 @@
  * then resilient DOM scraping).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class ChatGPTAdapter extends BaseAdapter {
+class ChatGPTAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'chatgpt',
@@ -93,3 +91,5 @@ export class ChatGPTAdapter extends BaseAdapter {
     return document.querySelector('#prompt-textarea') || document.querySelector('textarea');
   }
 }
+
+OmniContext.ChatGPTAdapter = ChatGPTAdapter;

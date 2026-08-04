@@ -6,9 +6,9 @@
  * falls back to DOM scraping.
  */
 
-import { ModelRegistry } from '../../core/modelRegistry.js';
+const ModelRegistry = OmniContext.ModelRegistry;
 
-export class BaseAdapter {
+class BaseAdapter {
   constructor(config = {}) {
     this.platformKey = config.platformKey || 'generic';
     this.hardLimitTokens = config.hardLimitTokens || 128000;
@@ -155,3 +155,5 @@ export class BaseAdapter {
     return document.querySelector('textarea, div[contenteditable="true"]');
   }
 }
+
+OmniContext.BaseAdapter = BaseAdapter;

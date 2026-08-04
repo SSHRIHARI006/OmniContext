@@ -3,10 +3,10 @@
  * Self-contained, draggable, resizable, and removable UI component displaying live context metrics.
  */
 
-import { MigrationPromptEngine } from '../../core/migrationPrompt.js';
-import { ModelRegistry } from '../../core/modelRegistry.js';
+const MigrationPromptEngine = OmniContext.MigrationPromptEngine;
+const ModelRegistry = OmniContext.ModelRegistry;
 
-export class ShadowContainer {
+class ShadowContainer {
   constructor(onPrepareSummary = null) {
     this.host = null;
     this.shadowRoot = null;
@@ -396,3 +396,5 @@ export class ShadowContainer {
     doc.addEventListener('pointercancel', onPointerUp);
   }
 }
+
+OmniContext.ShadowContainer = ShadowContainer;

@@ -11,9 +11,7 @@
  * Decay (Id), Turn Depth Factor (Td), Code Repetition Density (Dr).
  */
 
-import { TokenEngine } from './tokenEngine.js';
-
-export class MetricsCalculator {
+class MetricsCalculator {
   static DEFAULT_TOKENS_PER_TURN = 800;
 
   /**
@@ -246,3 +244,5 @@ export class MetricsCalculator {
     return 'optimal';
   }
 }
+
+OmniContext.MetricsCalculator = MetricsCalculator;

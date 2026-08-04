@@ -22,14 +22,14 @@ SPEC-1 defined three targeted upgrades to OmniContext. All three are now impleme
 ## 2. Cross-Browser Compatibility (§2)
 
 ### 2.1 Build Pipeline
-- `manifest.base.json` is now the single manifest source of truth (version `1.1.0`, MV3).
+- `manifest.base.json` is now the single manifest source of truth (version `1.2.0`, MV3).
 - `scripts/build.js` generates browser-specific manifests:
   - **`dist/chrome/`** — `background.service_worker` only, no `browser_specific_settings`. Used by Chrome, Edge, Brave, Opera, Vivaldi, Arc.
   - **`dist/firefox/`** — `background.scripts` array + `browser_specific_settings.gecko` block.
 - Commands:
   - `npm run build` → both builds
   - `npm run build:chrome` / `npm run build:firefox` → single build
-  - `npm run package` → zip both into `omnicontext-v1.1.0-{chrome,firefox}.zip`
+  - `npm run package` → zip both into `omnicontext-v1.2.0-{chrome,firefox}.zip`
 
 ### 2.2 Content Bundle
 - The manifest loads `src/content/content.bundle.js`; the source of truth lives in ES modules under `src/`.
@@ -107,7 +107,7 @@ S_health = max(S_bloat, S_rot)
 - Added a **Bloat / Rot detail row** (two chips) under the status pill.
 - New **Degrading** status pill (orange) + tier-specific descriptions.
 - Migrate button thresholds moved to 65 (Degrading) and 85 (Bloated) with orange/red gradients.
-- Version tag bumped to `v1.1.0`.
+- Version tag bumped to `v1.2.0`.
 
 ### 5.2 Shadow DOM HUD
 - Badge text: `Tokens | Health%`.
@@ -123,7 +123,7 @@ S_health = max(S_bloat, S_rot)
 ## 6. Files Changed / Added
 
 **Added**
-- `manifest.base.json` — single-source manifest (v1.1.0)
+- `manifest.base.json` — single-source manifest (v1.2.0)
 - `scripts/build.js` — per-browser manifest generation + dist copy
 - `scripts/bundle-content.js` — zero-dependency content-script bundler
 - `src/content/interceptor.js` — main-world fetch/XHR model interceptor
@@ -131,7 +131,7 @@ S_health = max(S_bloat, S_rot)
 - `dist/chrome/`, `dist/firefox/` — build outputs (gitignored)
 
 **Modified**
-- `package.json` — v1.1.0, `type: module`, build/test scripts, `webextension-polyfill` dep
+- `package.json` — v1.2.0, `type: module`, build/test scripts, `webextension-polyfill` dep
 - `src/core/modelRegistry.js` — Aug 2026 model list, no softLimit, `getModelByApiId()`
 - `src/core/metricsCalculator.js` — 5-signal bloat/rot, 4 tiers
 - `src/content/adapters/baseAdapter.js` — two-phase `getDetectedModel()`

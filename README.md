@@ -1,4 +1,4 @@
-# OmniContext — Universal LLM Context & Bloat Monitor (V1.1.0)
+# OmniContext — Universal LLM Context & Bloat Monitor (V1.2.0)
 
 **OmniContext** is a lightweight, zero-external-API WebExtension (Manifest V3) that provides real-time visibility into context window usage, token density, and context degradation risk ("context bloat"/"context rot") across major LLM web interfaces (**ChatGPT**, **Claude**, **Gemini**, **DeepSeek**, **Kimi**, **Qwen**).
 
@@ -77,12 +77,12 @@ Cross-browser compatible with **Firefox**, **Chrome**, **Edge**, **Brave**, **Op
 
 ### Build
 ```bash
-npm install            # installs development dependencies (none required at runtime)
-npm run build          # bundle content script + build both dist/chrome and dist/firefox
-npm run build:chrome   # dist/chrome/ only
-npm run build:firefox  # dist/firefox/ only
-npm test               # run unit tests
-npm run package        # zip both builds
+npm install            # installs Node/npm metadata; no runtime dependencies
+npm run build          # validate manifests + copy direct source files to both dist builds
+npm run build:chrome   # build dist/chrome/ only
+npm run build:firefox  # build dist/firefox/ only
+npm test               # run unit and source-compliance tests
+npm run package        # create Chrome and Firefox ZIPs
 ```
 
 The build produces:
@@ -115,8 +115,8 @@ The build produces:
 ---
 
 ## Development
-- Source lives in ES modules under `src/`; the manifest loads the generated `src/content/content.bundle.js`.
-- Run `npm run bundle:content` after editing content-script modules to regenerate the bundle.
+- Source lives in separate manually maintained classic JavaScript files under `src/`; manifests load those files directly in dependency order.
+- `scripts/build.js` only validates manifests, generates browser-specific manifest fields, and copies source files unchanged. It does not concatenate, transpile, minify, or template source code.
 - Open the popup's **Debug logging** checkbox to persist diagnostics; logs include adapter/model/count metadata only, never chat text.
 - If the popup cannot reach a live content script, it displays **Simulation / No live data** instead of silently presenting synthetic metrics.
-- Specifications live in `.specs/` (SPEC-1 design → SPEC-2 implementation log → SPEC-3 review → SPEC-4 fixes → SPEC-5 audit → SPEC-6 implementation).
+- Specifications live in `.specs/` (SPEC-1 design → SPEC-2 implementation log → SPEC-3 review → SPEC-4 fixes → SPEC-5 audit → SPEC-6 implementation → SPEC-7 compliance migration → SPEC-8 final release).

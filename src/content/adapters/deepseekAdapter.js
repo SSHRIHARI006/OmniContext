@@ -3,9 +3,7 @@
  * Scrapes DeepSeek V3 and DeepSeek R1 conversations (64k - 128k context window).
  */
 
-import { BaseAdapter } from './baseAdapter.js';
-
-export class DeepSeekAdapter extends BaseAdapter {
+class DeepSeekAdapter extends OmniContext.BaseAdapter {
   constructor() {
     super({
       platformKey: 'deepseek',
@@ -62,3 +60,5 @@ export class DeepSeekAdapter extends BaseAdapter {
     return document.querySelector('#chat-input') || document.querySelector('textarea');
   }
 }
+
+OmniContext.DeepSeekAdapter = DeepSeekAdapter;

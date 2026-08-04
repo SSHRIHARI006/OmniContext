@@ -3,7 +3,7 @@
  * Fast local subword BPE token estimation based on o200k_base encoding heuristics with provider multipliers.
  */
 
-export class TokenEngine {
+class TokenEngine {
   /**
    * Estimates raw token count for a text string using o200k_base BPE subword heuristics.
    * @param {string} text 
@@ -108,3 +108,5 @@ export class TokenEngine {
     };
   }
 }
+
+OmniContext.TokenEngine = TokenEngine;

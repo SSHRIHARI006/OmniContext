@@ -58,12 +58,33 @@ function buildManifest(base, browser) {
   return manifest;
 }
 
+function getManifestScriptPaths(manifest) {
+  const contentScripts = manifest.content_scripts || [];
+  const contentPaths = contentScripts.flatMap((entry) => entry.js || []);
+  const background = manifest.background || {};
+  const backgroundPaths = [
+    background.service_worker,
+    ...(background.scripts || [])
+  ].filter(Boolean);
+  return [...contentPaths, ...backgroundPaths];
+}
+
+function validateManifestSources(manifest) {
+  for (const file of getManifestScriptPaths(manifest)) {
+    const sourcePath = join(ROOT, file);
+    if (!existsSync(sourcePath)) {
+      throw new Error(`[build] Manifest references missing source file: ${file}`);
+    }
+  }
+}
+
 function buildTarget(browser) {
   const outDir = join(ROOT, 'dist', browser);
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
 
   const manifest = buildManifest(loadBaseManifest(), browser);
+  validateManifestSources(manifest);
   writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   cpSync(SRC, join(outDir, 'src'), { recursive: true });
 
