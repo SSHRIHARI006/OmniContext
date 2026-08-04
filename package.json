@@ -1,11 +1,16 @@
 {
   "name": "omnicontext-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Universal LLM Context & Bloat Monitor WebExtension",
   "main": "src/background/serviceWorker.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"OmniContext V1.0.0 Ready\"",
-    "package": "zip -r omnicontext-v1.0.0.zip manifest.json src/ README.md"
+    "bundle:content": "node scripts/bundle-content.js",
+    "build:chrome": "npm run bundle:content && node scripts/build.js chrome",
+    "build:firefox": "npm run bundle:content && node scripts/build.js firefox",
+    "build": "npm run bundle:content && node scripts/build.js all",
+    "package": "npm run build && cd dist/chrome && zip -r ../../omnicontext-v${npm_package_version}-chrome.zip . && cd ../firefox && zip -r ../../omnicontext-v${npm_package_version}-firefox.zip .",
+    "test": "node --test tests/metrics.test.js"
   },
   "keywords": [
     "chrome-extension",
@@ -21,5 +26,9 @@
     "qwen"
   ],
   "author": "OmniContext Team",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {
+    "webextension-polyfill": "^0.12.0"
+  }
 }

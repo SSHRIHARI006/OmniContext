@@ -1,7 +1,14 @@
 /**
  * OmniContext Content Script Orchestrator
- * Detects host platform, scrapes messages, calculates context bloat using ModelRegistry context limits,
- * supports real-time ON/OFF toggle storage sync, and renders Shadow DOM overlay HUD.
+ * Detects host platform, scrapes messages, calculates context bloat/rot via
+ * the ModelRegistry context limits, supports real-time ON/OFF toggle storage
+ * sync, listens for network-intercepted model IDs, and renders the Shadow DOM
+ * overlay HUD.
+ *
+ * The content bundle intentionally does not vendor webextension-polyfill:
+ * it can run before the polyfill setup script, and the extApi fallback below
+ * handles the browser/chrome split. The polyfill is used in the popup,
+ * background worker, and service worker where it is safe.
  */
 
 import { BaseAdapter } from './adapters/baseAdapter.js';
@@ -20,6 +27,10 @@ import { ShadowContainer } from './ui/shadowContainer.js';
 
 const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 
+// Firefox MV3 does not support content_scripts "world": "MAIN", so the
+// interceptor is injected dynamically there via a web-accessible script tag.
+const IS_FIREFOX = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent || '');
+
 export class ContentOrchestrator {
   constructor() {
     this.adapter = null;
@@ -37,6 +48,8 @@ export class ContentOrchestrator {
     this.shadowUI = new ShadowContainer(() => this.handlePrepareSummary());
     this.setupMessageListeners();
     this.setupStorageListeners();
+    this.setupInterceptorListeners();
+    this.setupInterceptorInjection();
 
     await this.checkEnabledState();
     if (this.isEnabled) {
@@ -46,30 +59,17 @@ export class ContentOrchestrator {
   }
 
   async checkEnabledState() {
-    return new Promise((resolve) => {
-      if (extApi && extApi.storage && extApi.storage.local) {
-        const getter = extApi.storage.local.get('extensionEnabled');
-        if (getter && typeof getter.then === 'function') {
-          getter.then((res) => {
-            this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-            this.shadowUI.setVisible(this.isEnabled);
-            resolve();
-          }).catch(() => {
-            this.shadowUI.setVisible(true);
-            resolve();
-          });
-        } else {
-          extApi.storage.local.get(['extensionEnabled'], (res) => {
-            this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-            this.shadowUI.setVisible(this.isEnabled);
-            resolve();
-          });
-        }
-      } else {
-        this.shadowUI.setVisible(true);
-        resolve();
+    if (extApi && extApi.storage && extApi.storage.local) {
+      try {
+        const res = await extApi.storage.local.get('extensionEnabled');
+        this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
+      } catch (e) {
+        this.isEnabled = true;
       }
-    });
+    } else {
+      this.isEnabled = true;
+    }
+    this.shadowUI.setVisible(this.isEnabled);
   }
 
   selectAdapter() {
@@ -111,17 +111,55 @@ export class ContentOrchestrator {
     });
   }
 
+  /**
+   * Listens for model detections forwarded by the main-world interceptor.
+   * Re-detects the model (and re-scans) when a new API model ID arrives.
+   * Duplicate model IDs are ignored (IMP-3: streaming produces many identical
+   * detections per second).
+   */
+  setupInterceptorListeners() {
+    let lastModelId = null;
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || data.type !== 'OMNI_MODEL_DETECTED' || !data.modelId) return;
+      if (data.modelId === lastModelId) return; // deduplicate
+      lastModelId = data.modelId;
+
+      if (this.adapter) {
+        this.adapter.setInterceptedModel(data.modelId);
+        this.performScan();
+      }
+    });
+  }
+
+  /**
+   * On Firefox (no "world": "MAIN"), inject the interceptor via a script tag
+   * pointing at the web-accessible resource.
+   */
+  setupInterceptorInjection() {
+    if (!IS_FIREFOX) return;
+    try {
+      const existing = document.getElementById('omni-interceptor-script');
+      if (existing) return;
+      const script = document.createElement('script');
+      script.id = 'omni-interceptor-script';
+      script.src = (extApi || chrome).runtime.getURL('src/content/interceptor.js');
+      (document.head || document.documentElement).appendChild(script);
+    } catch (e) {
+      console.debug('[OmniContext] Could not inject interceptor:', e);
+    }
+  }
+
   performScan() {
     if (!this.isEnabled) return;
 
     try {
       const messages = this.adapter.extractMessages();
-      this.modelInfo = this.adapter.getModelInfo();
+      this.modelInfo = this.adapter.getDetectedModel();
 
       const metrics = MetricsCalculator.calculateMetrics(messages, {
-        softLimitTokens: this.modelInfo.softLimit,
         hardLimitTokens: this.modelInfo.limit,
-        tokenMultiplier: this.adapter.tokenMultiplier
+        tokenMultiplier: this.modelInfo.multiplier || this.adapter.tokenMultiplier
       });
 
       metrics.modelName = this.modelInfo.name;
@@ -146,14 +184,14 @@ export class ContentOrchestrator {
 
     if (extApi && extApi.runtime && extApi.runtime.sendMessage) {
       try {
-        extApi.runtime.sendMessage(payload, () => {
-          if (extApi.runtime.lastError) {}
-        });
+        extApi.runtime.sendMessage(payload).catch(() => {});
       } catch (e) {}
     }
 
     if (extApi && extApi.storage && extApi.storage.local) {
-      extApi.storage.local.set({ activeMetrics: payload });
+      try {
+        extApi.storage.local.set({ activeMetrics: payload });
+      } catch (e) {}
     }
   }
 

@@ -10,6 +10,7 @@
   
   --color-optimal: #4ade80;
   --color-dense: #facc15;
+  --color-degrading: #f97316;
   --color-bloated: #f87171;
   
   --accent-cyan: #38bdf8;
@@ -291,6 +292,44 @@ input:checked + .slider:before {
   color: var(--color-bloated);
   border: 1px solid rgba(248, 113, 113, 0.3);
 }
+
+.status-degrading {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--color-degrading);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.bloat-rot-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 3px 8px;
+}
+
+.detail-chip b {
+  color: #fff;
+  font-weight: 700;
+}
+
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.chip-bloat { background: #a78bfa; }
+.chip-rot { background: #fb923c; }
 
 .status-dot {
   width: 7px;

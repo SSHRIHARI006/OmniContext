@@ -3,7 +3,7 @@
  * Self-contained, draggable, resizable, and removable UI component displaying live context metrics.
  */
 
-import { MigrationPromptEngine } from '../core/migrationPrompt.js';
+import { MigrationPromptEngine } from '../../core/migrationPrompt.js';
 import { ModelRegistry } from '../../core/modelRegistry.js';
 
 export class ShadowContainer {
@@ -79,6 +79,7 @@ export class ShadowContainer {
         .omni-status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
         .omni-status-optimal { background: #4ade80; box-shadow: 0 0 8px #4ade80; }
         .omni-status-dense { background: #facc15; box-shadow: 0 0 8px #facc15; }
+        .omni-status-degrading { background: #f97316; box-shadow: 0 0 10px #f97316; animation: pulse 1.2s infinite; }
         .omni-status-bloated { background: #f87171; box-shadow: 0 0 10px #f87171; animation: pulse 1.2s infinite; }
 
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
@@ -108,6 +109,8 @@ export class ShadowContainer {
         .omni-progress-bg { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 4px; overflow: hidden; }
         .omni-progress-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease, background 0.3s ease; }
 
+        .omni-bloat-rot { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; }
+
         .omni-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .omni-stat-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
         .omni-stat-val { font-size: 14px; font-weight: 700; color: #f1f5f9; }
@@ -122,6 +125,7 @@ export class ShadowContainer {
 
         .omni-btn:hover { filter: brightness(1.15); }
         .omni-btn-danger { background: linear-gradient(135deg, #dc2626, #991b1b); }
+        .omni-btn-warn { background: linear-gradient(135deg, #ea580c, #9a3412); }
       </style>
 
       <div class="omni-hud-root" id="omni-hud">
@@ -130,7 +134,7 @@ export class ShadowContainer {
           <span class="omni-status-dot omni-status-optimal" id="omni-dot"></span>
           <span style="font-weight: 700; color: #38bdf8;">OmniContext</span>
           <span class="omni-divider"></span>
-          <span class="omni-badge-text" id="omni-badge-summary">0 Tokens | 0% Bloat</span>
+          <span class="omni-badge-text" id="omni-badge-summary">0 Tokens | 0% Health</span>
           <button class="omni-close-btn" id="omni-badge-close" title="Close / Hide Overlay">✕</button>
         </div>
 
@@ -158,11 +162,22 @@ export class ShadowContainer {
 
           <div class="omni-metric-row">
             <div class="omni-metric-label">
-              <span>Context Bloat Score</span>
+              <span>Health Score (max Bloat/Rot)</span>
               <span id="omni-bloat-text">0 / 100</span>
             </div>
             <div class="omni-progress-bg">
               <div class="omni-progress-fill" id="omni-bloat-bar" style="width: 0%; background: #4ade80;"></div>
+            </div>
+          </div>
+
+          <div class="omni-bloat-rot">
+            <div class="omni-metric-label">
+              <span style="color: #a78bfa;">Bloat</span>
+              <span id="omni-bloat-val">0</span>
+            </div>
+            <div class="omni-metric-label">
+              <span style="color: #fb923c;">Rot</span>
+              <span id="omni-rot-val">0</span>
             </div>
           </div>
 
@@ -236,10 +251,12 @@ export class ShadowContainer {
   updateMetrics(metrics, platformKey = 'generic', modelName = '') {
     if (!metrics) return;
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.softLimit);
+    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
     const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
+    const healthScore = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
+    const rotScore = metrics.rotScore !== undefined ? metrics.rotScore : 0;
 
-    this.shadowRoot.getElementById('omni-badge-summary').innerText = `${formattedTotal} T | ${metrics.bloatScore}% Bloat`;
+    this.shadowRoot.getElementById('omni-badge-summary').innerText = `${formattedTotal} T | ${healthScore}% Health`;
     this.shadowRoot.getElementById('omni-dot').className = `omni-status-dot omni-status-${metrics.statusLevel}`;
     
     this.shadowRoot.getElementById('omni-platform-badge').innerText = platformKey;
@@ -255,26 +272,41 @@ export class ShadowContainer {
     else if (metrics.capacityUsed > 50) capBar.style.background = '#facc15';
     else capBar.style.background = '#38bdf8';
 
-    this.shadowRoot.getElementById('omni-bloat-text').innerText = `${metrics.bloatScore} / 100 (${metrics.statusLevel.toUpperCase()})`;
+    this.shadowRoot.getElementById('omni-bloat-text').innerText = `${healthScore} / 100 (${metrics.statusLevel.toUpperCase()})`;
 
     const bloatBar = this.shadowRoot.getElementById('omni-bloat-bar');
-    bloatBar.style.width = `${metrics.bloatScore}%`;
-    if (metrics.bloatScore >= 75) bloatBar.style.background = '#f87171';
-    else if (metrics.bloatScore >= 50) bloatBar.style.background = '#facc15';
+    bloatBar.style.width = `${healthScore}%`;
+    if (healthScore >= 85) bloatBar.style.background = '#f87171';
+    else if (healthScore >= 65) bloatBar.style.background = '#f97316';
+    else if (healthScore >= 40) bloatBar.style.background = '#facc15';
     else bloatBar.style.background = '#4ade80';
+
+    const bloatVal = this.shadowRoot.getElementById('omni-bloat-val');
+    const rotVal = this.shadowRoot.getElementById('omni-rot-val');
+    if (bloatVal) bloatVal.innerText = `${metrics.bloatScore}`;
+    if (rotVal) rotVal.innerText = `${rotScore}`;
 
     this.shadowRoot.getElementById('omni-stat-turns').innerText = `${metrics.turnCount}`;
     this.shadowRoot.getElementById('omni-stat-code').innerText = `${metrics.codeDensity}%`;
     this.shadowRoot.getElementById('omni-stat-ratio').innerText = `${metrics.userRatio}/${metrics.assistantRatio}`;
 
+    const statusColors = {
+      optimal: '#4ade80',
+      dense: '#facc15',
+      degrading: '#f97316',
+      bloated: '#f87171'
+    };
     const statStatus = this.shadowRoot.getElementById('omni-stat-status');
     statStatus.innerText = metrics.statusLevel.toUpperCase();
-    statStatus.style.color = metrics.statusLevel === 'bloated' ? '#f87171' : metrics.statusLevel === 'dense' ? '#facc15' : '#4ade80';
+    statStatus.style.color = statusColors[metrics.statusLevel] || '#4ade80';
 
     const migrateBtn = this.shadowRoot.getElementById('omni-migrate-btn');
-    if (metrics.bloatScore >= 75) {
+    if (healthScore >= 85) {
       migrateBtn.className = 'omni-btn omni-btn-danger';
       migrateBtn.innerText = 'Context Bloated: Prepare Summary';
+    } else if (healthScore >= 65) {
+      migrateBtn.className = 'omni-btn omni-btn-warn';
+      migrateBtn.innerText = 'Context Degrading: Prepare Summary';
     } else {
       migrateBtn.className = 'omni-btn';
       migrateBtn.innerText = 'Prepare Context Summary';

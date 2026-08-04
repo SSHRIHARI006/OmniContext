@@ -1,19 +1,29 @@
 /**
- * OmniContext Metrics & Bloat Calculator
- * Computes detailed metrics and composite Context Bloat Score according to SPEC Section 4.
+ * OmniContext Metrics & Context Health Calculator
+ * Computes detailed metrics plus the SPEC-1 five-signal Context Bloat /
+ * Context Rot composite scores:
+ *
+ *   S_bloat = min(100, 0.35·Cp + 0.30·Ri + 0.15·Id + 0.10·Td + 0.10·Dr)
+ *   S_rot   = min(100, 0.25·Cp + 0.20·Ri + 0.25·Id + 0.20·Td + 0.10·Dr)
+ *   S_health = max(S_bloat, S_rot)
+ *
+ * Signals: Capacity Pressure (Cp), Redundancy Index (Ri), Information Gain
+ * Decay (Id), Turn Depth Factor (Td), Code Repetition Density (Dr).
  */
 
 import { TokenEngine } from './tokenEngine.js';
 
 export class MetricsCalculator {
+  static DEFAULT_TOKENS_PER_TURN = 800;
+
   /**
    * Calculates complete MetricsPayload given messages and platform configuration.
-   * @param {Array<{id: string, role: 'user'|'assistant'|'system', text: string, codeText?: string}>} messages 
-   * @param {Object} platformConfig 
+   * @param {Array<{id: string, role: 'user'|'assistant'|'system', text: string, codeText?: string}>} messages
+   * @param {Object} platformConfig
    * @returns {Object} MetricsPayload
    */
   static calculateMetrics(messages = [], platformConfig = {}) {
-    const softLimit = platformConfig.softLimitTokens || 24000;
+    const contextLimit = platformConfig.hardLimitTokens || platformConfig.contextLimit || 128000;
     const multiplier = platformConfig.tokenMultiplier || 1.0;
 
     let userTokens = 0;
@@ -49,41 +59,42 @@ export class MetricsCalculator {
     const totalTokens = userTokens + assistantTokens;
     const turnCount = Math.max(userTurns, assistantTurns);
 
-    // Calculate User vs Assistant ratios
+    // User vs Assistant ratios
     const userRatio = totalTokens > 0 ? Math.round((userTokens / totalTokens) * 100) : 0;
     const assistantRatio = totalTokens > 0 ? Math.round((assistantTokens / totalTokens) * 100) : 0;
 
-    // Code density percentage
+    // Code density percentage (informational, no longer penalized unconditionally)
     const codeDensity = totalTokens > 0 ? Math.min(100, Math.round((totalCodeTokens / totalTokens) * 100)) : 0;
 
-    // Capacity used percentage against soft limit
-    const capacityUsed = Math.min(100, (totalTokens / softLimit) * 100);
+    // ===== Five-signal computation =====
 
-    // Component calculations for bloat score
-    // C_capacity = min(100, (Total Tokens / Soft Limit) * 100)
-    const C_capacity = capacityUsed;
+    // 1. Capacity Pressure (Cp): how full the context window is
+    const Cp = Math.min(100, (totalTokens / contextLimit) * 100);
 
-    // T_turn = min(100, (Turn Count / 30) * 100)
-    const T_turn = Math.min(100, (turnCount / 30) * 100);
+    // 2. Redundancy Index (Ri): sliding-window n-gram repetition
+    const Ri = MetricsCalculator.calculateRedundancy(messages);
 
-    // D_code = min(100, (Code Tokens / Total Tokens) * 100)
-    const D_code = codeDensity;
+    // 3. Information Gain Decay (Id): recent turns adding new info vs restating
+    const Id = MetricsCalculator.calculateInfoDecay(messages);
 
-    // Bloat Score Formula: S_bloat = min(100, 0.60 * C_capacity + 0.20 * T_turn + 0.20 * D_code)
-    const rawBloatScore = 0.60 * C_capacity + 0.20 * T_turn + 0.20 * D_code;
-    const bloatScore = Math.min(100, Math.round(rawBloatScore));
+    // 4. Turn Depth Factor (Td): turns relative to effective attention span
+    const Td = MetricsCalculator.calculateTurnDepth(turnCount, totalTokens, contextLimit);
 
-    // Status Level Classification (FR-4.2)
-    let statusLevel = 'optimal';
-    if (bloatScore >= 75) {
-      statusLevel = 'bloated';
-    } else if (bloatScore >= 50) {
-      statusLevel = 'dense';
-    } else {
-      statusLevel = 'optimal';
-    }
+    // 5. Code Repetition Density (Dr): repeated code blocks vs unique code
+    const Dr = MetricsCalculator.calculateCodeRepetition(messages);
 
-    const remainingTokens = Math.max(0, softLimit - totalTokens);
+    // Composite scores
+    const rawBloat = 0.35 * Cp + 0.30 * Ri + 0.15 * Id + 0.10 * Td + 0.10 * Dr;
+    const rawRot = 0.25 * Cp + 0.20 * Ri + 0.25 * Id + 0.20 * Td + 0.10 * Dr;
+    const bloatScore = Math.min(100, Math.round(rawBloat));
+    const rotScore = Math.min(100, Math.round(rawRot));
+    const healthScore = Math.max(bloatScore, rotScore);
+
+    // Status tier (SPEC-1 §4.2.4)
+    const statusLevel = MetricsCalculator.classifyStatus(healthScore);
+
+    const remainingTokens = Math.max(0, contextLimit - totalTokens);
+    const capacityUsed = Math.round(Cp);
 
     return {
       totalTokens,
@@ -95,11 +106,143 @@ export class MetricsCalculator {
       userRatio,
       assistantRatio,
       codeDensity,
-      capacityUsed: Math.round(capacityUsed),
+      capacityUsed,
+      // New SPEC-1 fields
+      healthScore,
       bloatScore,
+      rotScore,
+      signals: {
+        capacityPressure: Math.round(Cp),
+        redundancyIndex: Math.round(Ri),
+        infoDecay: Math.round(Id),
+        turnDepth: Math.round(Td),
+        codeRepetition: Math.round(Dr)
+      },
       statusLevel,
-      softLimit,
-      remainingTokens
+      contextLimit,
+      remainingTokens,
+      // Back-compat alias (replaced by contextLimit in v1.1)
+      softLimit: contextLimit
     };
+  }
+
+  /**
+   * Redundancy Index (Ri): sliding-window n-gram repetition detection.
+   * @param {Array} messages
+   * @returns {number} 0-100
+   */
+  static calculateRedundancy(messages) {
+    const NGRAM_SIZE = 5;
+    // Cap the shingle set so very long conversations don't build a ~5MB Set
+    // on every 500ms debounced scan (IMP-1).
+    const MAX_SHINGLES = 50000;
+    const allShingles = new Set();
+    let totalShingles = 0;
+    let repeatedShingles = 0;
+
+    for (const msg of messages) {
+      const words = (msg.text || '').toLowerCase().split(/\s+/);
+      for (let i = 0; i <= words.length - NGRAM_SIZE; i++) {
+        const shingle = words.slice(i, i + NGRAM_SIZE).join(' ');
+        totalShingles++;
+        if (allShingles.has(shingle)) {
+          repeatedShingles++;
+        } else if (allShingles.size < MAX_SHINGLES) {
+          allShingles.add(shingle);
+        }
+      }
+    }
+
+    return totalShingles > 0
+      ? Math.min(100, (repeatedShingles / totalShingles) * 200)
+      : 0;
+  }
+
+  /**
+   * Information Gain Decay (Id): average vocab gain of the last 4 turns vs
+   * the first 4 turns.
+   * @param {Array} messages
+   * @returns {number} 0-100
+   */
+  static calculateInfoDecay(messages) {
+    // Require at least 6 messages so the "early" (first 4) and "late"
+    // (last 4) windows are distinct; a 4-message conversation would compare
+    // the same array against itself and always yield 0 (IMP-2).
+    if (!messages || messages.length < 6) return 0;
+
+    const globalVocab = new Set();
+    const recentGainRates = [];
+
+    for (const msg of messages) {
+      const words = new Set(
+        (msg.text || '')
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 3)
+      );
+      const newWords = [...words].filter((w) => !globalVocab.has(w));
+      const gainRate = words.size > 0 ? newWords.length / words.size : 0;
+      recentGainRates.push(gainRate);
+      words.forEach((w) => globalVocab.add(w));
+    }
+
+    // Skip the first message when computing the early baseline — its vocab is
+    // ~100% new by definition, which skews earlyAvg very high (IMP-2).
+    const last4 = recentGainRates.slice(-4);
+    const first4 = recentGainRates.slice(1, 5);
+    const recentAvg = last4.reduce((a, b) => a + b, 0) / last4.length;
+    const earlyAvg = first4.reduce((a, b) => a + b, 0) / first4.length;
+
+    const decay = earlyAvg > 0 ? Math.max(0, 1 - recentAvg / earlyAvg) : 0;
+    return Math.min(100, decay * 100);
+  }
+
+  /**
+   * Turn Depth Factor (Td): conversation length relative to the effective
+   * attention span (contextLimit / avgTokensPerTurn). Falls back to a
+   * default of 800 tokens/turn when the conversation is short.
+   * @param {number} turnCount
+   * @param {number} totalTokens
+   * @param {number} contextLimit
+   * @returns {number} 0-100
+   */
+  static calculateTurnDepth(turnCount, totalTokens, contextLimit) {
+    if (!turnCount) return 0;
+    const avgTokensPerTurn = Math.round(totalTokens / turnCount) || MetricsCalculator.DEFAULT_TOKENS_PER_TURN;
+    const effectiveMaxTurns = Math.max(1, contextLimit / avgTokensPerTurn);
+    return Math.min(100, (turnCount / effectiveMaxTurns) * 100);
+  }
+
+  /**
+   * Code Repetition Density (Dr): only repeated code blocks are penalized.
+   * @param {Array} messages
+   * @returns {number} 0-100
+   */
+  static calculateCodeRepetition(messages) {
+    const codeBlocks = [];
+    for (const msg of messages || []) {
+      if (msg.codeText) {
+        const normalized = msg.codeText.trim().replace(/\s+/g, ' ');
+        if (normalized.length > 20) codeBlocks.push(normalized);
+      }
+    }
+
+    if (codeBlocks.length <= 1) return 0;
+
+    const unique = new Set(codeBlocks);
+    const dupeRatio = 1 - unique.size / codeBlocks.length;
+    return Math.min(100, dupeRatio * 100);
+  }
+
+  /**
+   * Classifies the combined health score into the SPEC-1 §4.2.4 four tiers.
+   * @param {number} score
+   * @returns {'optimal'|'dense'|'degrading'|'bloated'}
+   */
+  static classifyStatus(score) {
+    if (score >= 85) return 'bloated';
+    if (score >= 65) return 'degrading';
+    if (score >= 40) return 'dense';
+    return 'optimal';
   }
 }

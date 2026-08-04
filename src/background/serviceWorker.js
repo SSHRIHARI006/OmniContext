@@ -1,62 +1,58 @@
 /**
- * OmniContext Background Service Worker (Cross-Browser Manifest V3: Chrome, Firefox, Edge, Brave, Safari)
+ * OmniContext Background Service Worker (Cross-Browser Manifest V3: Chrome, Firefox, Edge, Brave)
  * Manages extension state, badge updates, and tab communications.
+ * Uses webextension-polyfill so `browser.*` works identically everywhere.
  */
 
-// Cross-browser API wrapper (Firefox 'browser' or Chrome 'chrome')
-const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
+import browser from 'webextension-polyfill';
 
-if (extApi && extApi.runtime) {
-  extApi.runtime.onInstalled.addListener(() => {
-    console.log('[OmniContext] Extension installed successfully (Firefox & Chrome Compatible).');
-    setExtensionBadge('OMNI', '#38bdf8');
-  });
+browser.runtime.onInstalled.addListener(() => {
+  console.log('[OmniContext] Extension installed successfully (cross-browser).');
+  setExtensionBadge('OMNI', '#38bdf8');
+});
 
-  // Listen for messages from content script or popup
-  extApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message && message.type === 'OMNI_METRICS_UPDATE') {
-      const { metrics, platformKey } = message;
-      
-      // Update Extension Badge
-      updateBadge(metrics);
+// Listen for messages from content script or popup
+browser.runtime.onMessage.addListener((message, sender) => {
+  if (message && message.type === 'OMNI_METRICS_UPDATE') {
+    const { metrics, platformKey } = message;
 
-      // Save to storage
-      if (extApi.storage && extApi.storage.local) {
-        const payload = {
-          metrics,
-          platformKey,
-          url: message.url,
-          timestamp: Date.now()
-        };
+    // Update Extension Badge
+    updateBadge(metrics);
 
-        if (sender && sender.tab && sender.tab.id) {
-          const tabKey = `tab_metrics_${sender.tab.id}`;
-          extApi.storage.local.set({ [tabKey]: payload, activeMetrics: payload });
-        } else {
-          extApi.storage.local.set({ activeMetrics: payload });
-        }
-      }
+    // Save to storage
+    const payload = {
+      metrics,
+      platformKey,
+      url: message.url,
+      timestamp: Date.now()
+    };
 
-      sendResponse({ status: 'received' });
+    if (sender && sender.tab && sender.tab.id) {
+      const tabKey = `tab_metrics_${sender.tab.id}`;
+      browser.storage.local.set({ [tabKey]: payload, activeMetrics: payload });
+    } else {
+      browser.storage.local.set({ activeMetrics: payload });
     }
+  }
 
-    return true; // Keep async response channel open
-  });
-}
+  return true; // Keep async response channel open
+});
 
 /**
  * Updates action badge text and background color based on metrics.
- * @param {Object} metrics 
+ * @param {Object} metrics
  */
 function updateBadge(metrics) {
   if (!metrics) return;
 
-  const score = metrics.bloatScore;
-  let color = '#4ade80'; // Optimal
-  if (score >= 75) {
-    color = '#ef4444'; // Bloated (Red)
-  } else if (score >= 50) {
-    color = '#eab308'; // Dense (Yellow)
+  const score = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
+  let color = '#4ade80'; // Optimal (green)
+  if (score >= 85) {
+    color = '#ef4444'; // Bloated (red)
+  } else if (score >= 65) {
+    color = '#f97316'; // Degrading (orange)
+  } else if (score >= 40) {
+    color = '#eab308'; // Dense (yellow)
   }
 
   let text = '';
@@ -70,7 +66,7 @@ function updateBadge(metrics) {
 }
 
 function setExtensionBadge(text, color) {
-  const actionApi = extApi?.action || extApi?.browserAction;
+  const actionApi = browser.action || browser.browserAction;
   if (actionApi) {
     if (actionApi.setBadgeBackgroundColor) {
       actionApi.setBadgeBackgroundColor({ color });

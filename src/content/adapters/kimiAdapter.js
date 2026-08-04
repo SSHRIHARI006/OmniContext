@@ -9,14 +9,13 @@ export class KimiAdapter extends BaseAdapter {
   constructor() {
     super({
       platformKey: 'kimi',
-      softLimitTokens: 128000,
-      hardLimitTokens: 2000000,
+      hardLimitTokens: 128000,
       tokenMultiplier: 1.10
     });
   }
 
   matches(hostname) {
-    return /moonshot\.cn|kimi\.ai/.test(hostname);
+    return /moonshot\.cn|kimi\.ai|kimi\.com/.test(hostname);
   }
 
   extractModelName() {

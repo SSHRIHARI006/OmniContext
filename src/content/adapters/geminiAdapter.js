@@ -1,6 +1,9 @@
 /**
  * OmniContext Gemini Adapter
- * Scrapes Google Gemini conversations and detects Gemini 1.5 / 2.0 Flash / Pro models (1M - 2M context window).
+ * Scrapes Google Gemini conversations and detects Gemini 2.5 Pro / Flash,
+ * 2.0 Flash, 1.5 Pro / Flash models (1M - 2M context window).
+ * Model detection is two-phase (network interceptor first, then resilient
+ * DOM scraping).
  */
 
 import { BaseAdapter } from './baseAdapter.js';
@@ -9,8 +12,7 @@ export class GeminiAdapter extends BaseAdapter {
   constructor() {
     super({
       platformKey: 'gemini',
-      softLimitTokens: 1000000, // Gemini default 1,000,000 (1M) context limit
-      hardLimitTokens: 2000000,
+      hardLimitTokens: 1000000,
       tokenMultiplier: 1.05
     });
   }
@@ -20,26 +22,36 @@ export class GeminiAdapter extends BaseAdapter {
   }
 
   extractModelName() {
+    // 1. Stable data-test-id / aria attributes first
     const selectors = [
-      '.model-picker-button',
       '[data-test-id="model-picker-button"]',
+      '[data-testid="model-picker-button"]',
+      '.model-picker-button',
       'mat-select',
       '.model-title',
       '[aria-label*="Gemini"]',
-      'button[aria-haspopup="menu"]',
-      '.input-area button',
-      'button'
+      'button[aria-haspopup="menu"]'
     ];
+
     for (const sel of selectors) {
       const elements = document.querySelectorAll(sel);
       for (const el of elements) {
         const text = el.textContent ? el.textContent.trim() : '';
-        if (/flash|pro|gemini|thinking|1\.5|2\.0/i.test(text)) {
+        if (/flash|pro|gemini|thinking|2\.5|2\.0|1\.5/i.test(text)) {
           return text;
         }
       }
     }
-    return 'Gemini 1.5 Flash';
+
+    // 2. Text-content matching in header
+    const regions = document.querySelectorAll('header, nav, [class*="model"], [data-test*="model"]');
+    for (const region of regions) {
+      const text = region.textContent ? region.textContent.trim() : '';
+      const m = text.match(/(gemini[^\s"]*|2\.5[^\s"]*pro|2\.5[^\s"]*flash|2\.0[^\s"]*flash|1\.5[^\s"]*)/i);
+      if (m) return m[0];
+    }
+
+    return 'Gemini (default)';
   }
 
   extractMessages() {
@@ -50,14 +62,17 @@ export class GeminiAdapter extends BaseAdapter {
       '.user-query',
       '.query-content',
       '.model-response-text',
-      '.response-container'
+      '.response-container',
+      '[data-testid*="user-query"]',
+      '[data-testid*="assistant-response"]'
     ];
 
     const elements = document.querySelectorAll(querySelectors.join(', '));
 
     elements.forEach((el, index) => {
       let role = 'assistant';
-      if (el.classList.contains('user-query') || el.classList.contains('query-content') || el.closest('.user-query-container')) {
+      if (el.classList.contains('user-query') || el.classList.contains('query-content') ||
+          el.closest('.user-query-container') || (el.getAttribute('data-testid') || '').includes('user-query')) {
         role = 'user';
       }
 

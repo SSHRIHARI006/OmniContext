@@ -1,13 +1,13 @@
 /**
  * OmniContext Popup Script
- * Clean, minimal, professional cross-browser implementation with ON/OFF Toggle Switch & Storage Sync.
+ * Clean, minimal, professional cross-browser implementation with ON/OFF Toggle
+ * Switch, Storage Sync, and the SPEC-1 combined Health / Bloat / Rot display.
  */
 
+import browser from 'webextension-polyfill';
 import { MetricsCalculator } from '../core/metricsCalculator.js';
 import { MigrationPromptEngine } from '../core/migrationPrompt.js';
 import { ModelRegistry } from '../core/modelRegistry.js';
-
-const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 
 class PopupController {
   constructor() {
@@ -45,51 +45,26 @@ class PopupController {
   }
 
   async loadToggleState() {
-    return new Promise((resolve) => {
-      if (extApi && extApi.storage && extApi.storage.local) {
-        const getter = extApi.storage.local.get('extensionEnabled');
-        if (getter && typeof getter.then === 'function') {
-          getter.then((res) => {
-            this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-            this.updateToggleUI(this.isEnabled);
-            resolve();
-          }).catch(() => {
-            this.updateToggleUI(true);
-            resolve();
-          });
-        } else {
-          extApi.storage.local.get(['extensionEnabled'], (res) => {
-            this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-            this.updateToggleUI(this.isEnabled);
-            resolve();
-          });
-        }
-      } else {
-        this.updateToggleUI(true);
-        resolve();
-      }
-    });
+    try {
+      const res = await browser.storage.local.get('extensionEnabled');
+      this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
+    } catch (e) {
+      this.isEnabled = true;
+    }
+    this.updateToggleUI(this.isEnabled);
   }
 
-  handleToggleChange(enabled) {
+  async handleToggleChange(enabled) {
     this.isEnabled = enabled;
     this.updateToggleUI(enabled);
 
-    // Persist to local storage
-    if (extApi && extApi.storage && extApi.storage.local) {
-      extApi.storage.local.set({ extensionEnabled: enabled });
-    }
-
-    // Broadcast message to active tab
-    if (extApi && extApi.tabs) {
-      try {
-        extApi.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs && tabs[0] && tabs[0].id) {
-            extApi.tabs.sendMessage(tabs[0].id, { action: 'SET_EXTENSION_STATE', enabled });
-          }
-        });
-      } catch (e) {}
-    }
+    try {
+      await browser.storage.local.set({ extensionEnabled: enabled });
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs[0] && tabs[0].id) {
+        browser.tabs.sendMessage(tabs[0].id, { action: 'SET_EXTENSION_STATE', enabled });
+      }
+    } catch (e) {}
 
     this.showToast(enabled ? 'Monitoring Enabled' : 'Monitoring Disabled');
     if (enabled) {
@@ -119,63 +94,33 @@ class PopupController {
   async fetchMetricsFromActiveTab() {
     if (!this.isEnabled) return;
 
-    if (extApi && extApi.tabs) {
-      try {
-        let tabs = [];
-        if (extApi.tabs.query.constructor.name === 'AsyncFunction' || typeof browser !== 'undefined') {
-          tabs = await extApi.tabs.query({ active: true, currentWindow: true });
-        } else {
-          tabs = await new Promise((resolve) => extApi.tabs.query({ active: true, currentWindow: true }, resolve));
+    try {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      const activeTab = tabs && tabs[0];
+      if (activeTab && activeTab.id) {
+        const response = await browser.tabs.sendMessage(activeTab.id, { action: 'GET_METRICS' });
+        if (response && response.metrics) {
+          this.updateUI(response.metrics, response.platformKey, response.modelName);
+          return;
         }
-
-        const activeTab = tabs && tabs[0];
-        if (activeTab && activeTab.id) {
-          const response = await new Promise((resolve) => {
-            try {
-              extApi.tabs.sendMessage(activeTab.id, { action: 'GET_METRICS' }, (res) => {
-                if (extApi.runtime.lastError) resolve(null);
-                else resolve(res);
-              });
-            } catch (e) {
-              resolve(null);
-            }
-          });
-
-          if (response && response.metrics) {
-            this.updateUI(response.metrics, response.platformKey, response.modelName);
-            return;
-          }
-        }
-      } catch (err) {
-        console.debug('[OmniContext Popup] Error fetching active tab metrics:', err);
       }
+    } catch (err) {
+      console.debug('[OmniContext Popup] Error fetching active tab metrics:', err);
     }
 
     // Fallback to storage
     this.fetchFromStorage();
   }
 
-  fetchFromStorage() {
-    if (extApi && extApi.storage && extApi.storage.local) {
-      const getter = extApi.storage.local.get('activeMetrics');
-      if (getter && typeof getter.then === 'function') {
-        getter.then((result) => {
-          if (result && result.activeMetrics && result.activeMetrics.metrics) {
-            this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
-          } else {
-            this.runSimulation('gemini');
-          }
-        }).catch(() => this.runSimulation('gemini'));
+  async fetchFromStorage() {
+    try {
+      const result = await browser.storage.local.get('activeMetrics');
+      if (result && result.activeMetrics && result.activeMetrics.metrics) {
+        this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
       } else {
-        extApi.storage.local.get(['activeMetrics'], (result) => {
-          if (result && result.activeMetrics && result.activeMetrics.metrics) {
-            this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
-          } else {
-            this.runSimulation('gemini');
-          }
-        });
+        this.runSimulation('gemini');
       }
-    } else {
+    } catch (e) {
       this.runSimulation('gemini');
     }
   }
@@ -193,8 +138,8 @@ class PopupController {
     ];
 
     const metrics = MetricsCalculator.calculateMetrics(mockMessages, {
-      softLimitTokens: modelInfo.softLimit,
-      tokenMultiplier: 1.0
+      hardLimitTokens: modelInfo.limit,
+      tokenMultiplier: modelInfo.multiplier || 1.0
     });
 
     this.updateUI(metrics, modelInfo.platform, modelInfo.name);
@@ -207,12 +152,14 @@ class PopupController {
 
     document.getElementById('platformBadge').innerText = `${this.modelName}`;
 
+    // Combined Health Score (max of bloat/rot)
+    const healthScore = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
     const bloatVal = document.getElementById('bloatScoreVal');
-    bloatVal.innerText = `${metrics.bloatScore}%`;
+    bloatVal.innerText = `${healthScore}`;
 
     const ringFill = document.getElementById('bloatRingFill');
     const circumference = 251.2;
-    const offset = circumference * (1 - metrics.bloatScore / 100);
+    const offset = circumference * (1 - healthScore / 100);
     ringFill.style.strokeDashoffset = offset;
 
     const statusPill = document.getElementById('statusPill');
@@ -223,12 +170,17 @@ class PopupController {
       ringFill.style.stroke = 'var(--color-bloated)';
       statusPill.className = 'status-pill status-bloated';
       statusText.innerText = 'Bloated';
-      statusDesc.innerText = 'High context saturation. Summary recommended.';
+      statusDesc.innerText = 'Critical context saturation. Migration strongly recommended.';
+    } else if (metrics.statusLevel === 'degrading') {
+      ringFill.style.stroke = 'var(--color-degrading)';
+      statusPill.className = 'status-pill status-degrading';
+      statusText.innerText = 'Degrading';
+      statusDesc.innerText = 'Significant rot detected; consider summarizing.';
     } else if (metrics.statusLevel === 'dense') {
       ringFill.style.stroke = 'var(--color-dense)';
       statusPill.className = 'status-pill status-dense';
       statusText.innerText = 'Dense';
-      statusDesc.innerText = 'Moderate context density detected.';
+      statusDesc.innerText = 'Moderate redundancy or attention dilution risk.';
     } else {
       ringFill.style.stroke = 'var(--color-optimal)';
       statusPill.className = 'status-pill status-optimal';
@@ -236,7 +188,13 @@ class PopupController {
       statusDesc.innerText = 'Optimal context retention and response speed.';
     }
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.softLimit);
+    // Bloat / Rot sub-indicators
+    const bloatDetail = document.getElementById('bloatDetailVal');
+    const rotDetail = document.getElementById('rotDetailVal');
+    if (bloatDetail) bloatDetail.innerText = `${metrics.bloatScore}`;
+    if (rotDetail) rotDetail.innerText = `${metrics.rotScore}`;
+
+    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
     const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
     const formattedRemaining = ModelRegistry.formatTokenCount(metrics.remainingTokens);
 
@@ -266,9 +224,12 @@ class PopupController {
     document.getElementById('assistantTokensVal').innerText = metrics.assistantTokens.toLocaleString();
 
     const btnMigrate = document.getElementById('btnMigrate');
-    if (metrics.bloatScore >= 75) {
+    if (healthScore >= 85) {
       btnMigrate.style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
       btnMigrate.innerText = 'Context Bloated: Inject Summary Prompt';
+    } else if (healthScore >= 65) {
+      btnMigrate.style.background = 'linear-gradient(135deg, #ea580c, #9a3412)';
+      btnMigrate.innerText = 'Context Degrading: Prepare Summary';
     } else {
       btnMigrate.style.background = 'linear-gradient(135deg, #0284c7, #4f46e5)';
       btnMigrate.innerText = 'Prepare Context Summary';
@@ -276,24 +237,15 @@ class PopupController {
   }
 
   async handleMigrate() {
-    if (extApi && extApi.tabs) {
-      try {
-        let tabs = [];
-        if (extApi.tabs.query.constructor.name === 'AsyncFunction' || typeof browser !== 'undefined') {
-          tabs = await extApi.tabs.query({ active: true, currentWindow: true });
-        } else {
-          tabs = await new Promise((resolve) => extApi.tabs.query({ active: true, currentWindow: true }, resolve));
-        }
-
-        const activeTab = tabs && tabs[0];
-        if (activeTab && activeTab.id) {
-          extApi.tabs.sendMessage(activeTab.id, { action: 'PREPARE_SUMMARY' }, () => {
-            this.showToast('Summary prompt injected');
-          });
-          return;
-        }
-      } catch (err) {}
-    }
+    try {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      const activeTab = tabs && tabs[0];
+      if (activeTab && activeTab.id) {
+        browser.tabs.sendMessage(activeTab.id, { action: 'PREPARE_SUMMARY' });
+        this.showToast('Summary prompt injected');
+        return;
+      }
+    } catch (err) {}
     this.handleCopyPrompt();
   }
 

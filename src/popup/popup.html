@@ -20,7 +20,7 @@
         </div>
         <div class="brand-text">
           <h1>OmniContext</h1>
-          <span class="version-tag">v1.0.0</span>
+          <span class="version-tag">v1.1.0</span>
         </div>
       </div>
 
@@ -47,7 +47,7 @@
           </svg>
           <div class="bloat-center">
             <span class="bloat-score-value" id="bloatScoreVal">0</span>
-            <span class="bloat-score-label">BLOAT SCORE</span>
+            <span class="bloat-score-label">HEALTH SCORE</span>
           </div>
         </div>
         <div class="bloat-status-info">
@@ -56,6 +56,10 @@
             <span class="status-text" id="statusText">Optimal</span>
           </div>
           <p class="status-desc" id="statusDesc">Optimal context retention and response speed.</p>
+          <div class="bloat-rot-row">
+            <span class="detail-chip"><span class="chip-dot chip-bloat"></span>Bloat <b id="bloatDetailVal">0</b></span>
+            <span class="detail-chip"><span class="chip-dot chip-rot"></span>Rot <b id="rotDetailVal">0</b></span>
+          </div>
         </div>
       </section>
 
@@ -131,9 +135,9 @@
         <select id="simSelect">
           <option value="auto">Auto Detect Tab</option>
           <option value="chatgpt">ChatGPT (128k limit)</option>
-          <option value="claude">Claude 3.5 (200k limit)</option>
-          <option value="gemini">Gemini 1.5 (1M limit)</option>
-          <option value="deepseek">DeepSeek (64k limit)</option>
+          <option value="claude">Claude 4 (200k limit)</option>
+          <option value="gemini">Gemini 2.5 (1M limit)</option>
+          <option value="deepseek">DeepSeek (128k limit)</option>
           <option value="kimi">Kimi (128k limit)</option>
         </select>
       </div>

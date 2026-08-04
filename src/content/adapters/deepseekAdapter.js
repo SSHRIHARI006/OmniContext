@@ -9,8 +9,7 @@ export class DeepSeekAdapter extends BaseAdapter {
   constructor() {
     super({
       platformKey: 'deepseek',
-      softLimitTokens: 64000, // DeepSeek V3 default limit
-      hardLimitTokens: 128000,
+      hardLimitTokens: 128000, // DeepSeek V3 / R1 default limit
       tokenMultiplier: 1.10
     });
   }
@@ -28,7 +27,7 @@ export class DeepSeekAdapter extends BaseAdapter {
         if (/deepseek|r1|v3/i.test(text)) return text;
       }
     }
-    return 'DeepSeek-V3';
+    return 'DeepSeek (default)';
   }
 
   extractMessages() {
@@ -38,7 +37,7 @@ export class DeepSeekAdapter extends BaseAdapter {
 
     elements.forEach((el, index) => {
       let role = 'assistant';
-      if (el.classList.contains('._user-message') || el.closest('._user-message')) {
+      if (el.classList.contains('_user-message') || el.closest('._user-message')) {
         role = 'user';
       }
 

@@ -1,6 +1,9 @@
 /**
  * OmniContext Base Platform Adapter
- * Interface and utility functions for extracting LLM messages, roles, code blocks, and model names.
+ * Interface and utility functions for extracting LLM messages, roles, code
+ * blocks, and model names. Per SPEC-1 §3.4, model detection is two-phase:
+ * Phase 1 uses the network interceptor's captured API model ID, Phase 2
+ * falls back to DOM scraping.
  */
 
 import { ModelRegistry } from '../../core/modelRegistry.js';
@@ -8,14 +11,24 @@ import { ModelRegistry } from '../../core/modelRegistry.js';
 export class BaseAdapter {
   constructor(config = {}) {
     this.platformKey = config.platformKey || 'generic';
-    this.softLimitTokens = config.softLimitTokens || 128000;
-    this.hardLimitTokens = config.hardLimitTokens || 1000000;
+    this.hardLimitTokens = config.hardLimitTokens || 128000;
     this.tokenMultiplier = config.tokenMultiplier || 1.0;
+    this._interceptedModelId = null;
+  }
+
+  /**
+   * Records a model ID captured by the network interceptor (main world).
+   * @param {string} modelId
+   */
+  setInterceptedModel(modelId) {
+    if (modelId && typeof modelId === 'string') {
+      this._interceptedModelId = modelId;
+    }
   }
 
   /**
    * Tests whether this adapter handles the given URL hostname.
-   * @param {string} hostname 
+   * @param {string} hostname
    * @returns {boolean}
    */
   matches(hostname) {
@@ -39,13 +52,28 @@ export class BaseAdapter {
   }
 
   /**
-   * Gets resolved model info and context limit.
-   * @returns {{ name: string, limit: number, softLimit: number, platform: string }}
+   * Two-phase model resolution (SPEC-1 §3.4):
+   * Phase 1 — check the network-intercepted API model ID.
+   * Phase 2 — fall back to DOM scraping + registry match.
+   * @returns {{ name: string, limit: number, platform: string, multiplier: number, source: string }}
+   */
+  getDetectedModel() {
+    if (this._interceptedModelId) {
+      const match = ModelRegistry.getModelByApiId(this._interceptedModelId);
+      if (match) {
+        return { ...match, source: 'network' };
+      }
+    }
+    const scrapedText = this.extractModelName();
+    return { ...ModelRegistry.getModelInfo(this.platformKey, scrapedText), source: 'dom' };
+  }
+
+  /**
+   * Resolves model info and context limit.
+   * @returns {{ name: string, limit: number, platform: string, multiplier: number }}
    */
   getModelInfo() {
-    const scrapedText = this.extractModelName();
-    const info = ModelRegistry.getModelInfo(this.platformKey, scrapedText);
-    return info;
+    return this.getDetectedModel();
   }
 
   /**
@@ -58,7 +86,7 @@ export class BaseAdapter {
 
   /**
    * Cleans an element's text by stripping UI buttons, SVGs, and hidden elements.
-   * @param {HTMLElement} element 
+   * @param {HTMLElement} element
    * @returns {string}
    */
   cleanElementText(element) {
@@ -76,8 +104,8 @@ export class BaseAdapter {
       '[aria-hidden="true"]'
     ];
 
-    selectorsToRemove.forEach(selector => {
-      clone.querySelectorAll(selector).forEach(node => node.remove());
+    selectorsToRemove.forEach((selector) => {
+      clone.querySelectorAll(selector).forEach((node) => node.remove());
     });
 
     return clone.textContent ? clone.textContent.trim() : '';
@@ -85,13 +113,13 @@ export class BaseAdapter {
 
   /**
    * Extracts text from pre/code blocks inside a message element.
-   * @param {HTMLElement} element 
+   * @param {HTMLElement} element
    * @returns {string}
    */
   extractCodeText(element) {
     if (!element) return '';
     let codeContent = '';
-    element.querySelectorAll('pre, code').forEach(block => {
+    element.querySelectorAll('pre, code').forEach((block) => {
       codeContent += ' ' + block.textContent;
     });
     return codeContent.trim();

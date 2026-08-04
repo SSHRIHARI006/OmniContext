@@ -9,7 +9,6 @@ export class GenericAdapter extends BaseAdapter {
   constructor() {
     super({
       platformKey: 'generic',
-      softLimitTokens: 25000,
       hardLimitTokens: 128000,
       tokenMultiplier: 1.00
     });
