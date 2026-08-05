@@ -57,6 +57,20 @@ test('browser builds copy source files unchanged', () => {
   }
 });
 
+test('manifest keeps web-accessible resources and extension CSP locked down', () => {
+  for (const manifest of [
+    BASE_MANIFEST,
+    JSON.parse(readFileSync(join(ROOT, 'dist/chrome/manifest.json'), 'utf8')),
+    JSON.parse(readFileSync(join(ROOT, 'dist/firefox/manifest.json'), 'utf8'))
+  ]) {
+    for (const entry of manifest.web_accessible_resources || []) {
+      assert.ok(!entry.matches.includes('<all_urls>'));
+      assert.deepEqual(entry.matches, manifest.host_permissions);
+    }
+    assert.match(manifest.content_security_policy.extension_pages, /script-src 'self'/);
+  }
+});
+
 test('generated manifests preserve browser-specific interceptor behavior', () => {
   const chrome = JSON.parse(readFileSync(join(ROOT, 'dist/chrome/manifest.json'), 'utf8'));
   const firefox = JSON.parse(readFileSync(join(ROOT, 'dist/firefox/manifest.json'), 'utf8'));

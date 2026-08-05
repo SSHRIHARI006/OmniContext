@@ -28,6 +28,27 @@ const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'un
 // interceptor is injected dynamically there via a web-accessible script tag.
 const IS_FIREFOX = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent || '');
 
+// Upper bound for model IDs accepted from the main-world interceptor.
+const MAX_MODEL_ID_LENGTH = 200;
+
+const EXTENSION_ACTIONS = new Set([
+  'SET_DEBUG_STATE',
+  'SET_EXTENSION_STATE',
+  'GET_METRICS',
+  'PREPARE_SUMMARY',
+  'FORCE_RESCAN'
+]);
+
+/**
+ * Accepts runtime messages only from this extension's own pages, never from
+ * another extension or from the page.
+ */
+function isTrustedSender(sender) {
+  const runtimeId = extApi?.runtime?.id;
+  if (!runtimeId) return false;
+  return !!sender && sender.id === runtimeId;
+}
+
 class ContentOrchestrator {
   constructor() {
     this.adapter = null;
@@ -134,13 +155,23 @@ class ContentOrchestrator {
   setupInterceptorListeners() {
     let lastModelId = null;
     window.addEventListener('message', (event) => {
+      // Only accept detections posted by the interceptor running in this exact
+      // window: cross-origin frames and other pages must not be able to spoof
+      // the detected model, and with it the context limit.
+      if (event.source !== window) return;
+      if (event.origin !== window.location.origin) return;
+
       const data = event.data;
-      if (!data || data.type !== 'OMNI_MODEL_DETECTED' || !data.modelId) return;
-      if (data.modelId === lastModelId) return; // deduplicate
-      lastModelId = data.modelId;
+      if (!data || data.type !== 'OMNI_MODEL_DETECTED') return;
+      if (typeof data.modelId !== 'string') return;
+
+      const modelId = data.modelId.trim();
+      if (!modelId || modelId.length > MAX_MODEL_ID_LENGTH) return;
+      if (modelId === lastModelId) return; // deduplicate
+      lastModelId = modelId;
 
       if (this.adapter) {
-        this.adapter.setInterceptedModel(data.modelId);
+        this.adapter.setInterceptedModel(modelId);
         this.performScan();
       }
     });
@@ -198,7 +229,9 @@ class ContentOrchestrator {
       type: 'OMNI_METRICS_UPDATE',
       platformKey: this.adapter.platformKey,
       modelName: this.modelInfo ? this.modelInfo.name : 'Default Model',
-      url: window.location.href,
+      // Query strings and fragments of chat URLs can carry conversation or
+      // account identifiers, so only origin + path is persisted.
+      url: `${window.location.origin}${window.location.pathname}`,
       metrics,
       timestamp: Date.now()
     };
@@ -268,6 +301,8 @@ class ContentOrchestrator {
   setupMessageListeners() {
     if (extApi && extApi.runtime && extApi.runtime.onMessage) {
       extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (!isTrustedSender(sender) || !request || !EXTENSION_ACTIONS.has(request.action)) return false;
+
         if (request.action === 'SET_DEBUG_STATE') {
           this.debugEnabled = !!request.enabled;
           sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });

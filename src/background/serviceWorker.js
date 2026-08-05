@@ -11,8 +11,19 @@ browser.runtime.onInstalled.addListener(() => {
   setExtensionBadge('OMNI', '#38bdf8');
 });
 
+/**
+ * Accepts messages only from this extension's own content scripts and pages.
+ * @param {Object} sender
+ * @returns {boolean}
+ */
+function isTrustedSender(sender) {
+  return !!sender && sender.id === browser.runtime.id;
+}
+
 // Listen for messages from content script or popup
 browser.runtime.onMessage.addListener((message, sender) => {
+  if (!isTrustedSender(sender)) return false;
+
   if (message && message.type === 'OMNI_METRICS_UPDATE') {
     const { metrics, platformKey } = message;
 
