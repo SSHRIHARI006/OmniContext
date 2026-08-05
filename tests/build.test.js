@@ -26,6 +26,66 @@ function manifestScripts(manifest) {
   return scripts;
 }
 
+/**
+ * Top-level `const`/`let`/`class`/`function` names of a classic script,
+ * including names bound by a top-level object-destructuring declaration.
+ */
+function topLevelDeclarations(source) {
+  const lines = source.split('\n');
+  const names = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const declaration = /^(?:const|let|var|class|function)\s+([A-Za-z0-9_$]+)/.exec(line);
+    if (declaration) {
+      names.push(declaration[1]);
+      continue;
+    }
+
+    if (!/^(?:const|let|var)\s*\{/.test(line)) continue;
+    let block = '';
+    for (let end = index; end < lines.length; end += 1) {
+      block += lines[end];
+      if (lines[end].includes('}')) {
+        index = end;
+        break;
+      }
+    }
+    const bindings = block.slice(block.indexOf('{') + 1, block.indexOf('}'));
+    for (const binding of bindings.split(',')) {
+      const name = binding.split(':').pop().trim();
+      if (name) names.push(name);
+    }
+  }
+
+  return names;
+}
+
+function popupScripts() {
+  const html = readFileSync(join(SRC, 'popup/popup.html'), 'utf8');
+  return [...html.matchAll(/<script src="([^"]+)"><\/script>/g)]
+    .map((match) => join('src/popup', match[1]));
+}
+
+// Every file of a content script (and of the popup page) shares one global
+// lexical scope, so a name declared twice is a load-time SyntaxError.
+test('co-loaded scripts declare unique top-level identifiers', () => {
+  const bundles = {
+    content: manifestScripts({ content_scripts: BASE_MANIFEST.content_scripts }),
+    popup: popupScripts()
+  };
+
+  for (const [bundle, files] of Object.entries(bundles)) {
+    const owners = new Map();
+    for (const file of files) {
+      for (const name of topLevelDeclarations(readFileSync(join(ROOT, file), 'utf8'))) {
+        assert.equal(owners.get(name), undefined, `${bundle}: "${name}" declared in ${owners.get(name)} and ${file}`);
+        owners.set(name, file);
+      }
+    }
+  }
+});
+
 test('source tree has no generated bundle or ES module syntax', () => {
   const files = sourceFiles(SRC);
   assert.ok(!files.some((file) => file.endsWith('content.bundle.js')));

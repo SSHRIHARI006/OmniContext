@@ -19,38 +19,24 @@ class ChatGPTAdapter extends OmniContext.BaseAdapter {
   }
 
   extractModelName() {
-    // 1. Stable data-testid / aria attributes first
-    const selectors = [
-      '[data-testid="model-switcher-dropdown-button"]',
-      '[data-testid="model-switcher-button"]',
-      'button[data-testid*="model"]',
-      '[data-testid*="model-picker"]',
-      'button[id^="radix-"]',
-      '[aria-haspopup="menu"]',
-      'div[class*="model-name"]'
-    ];
-
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && el.textContent) {
-        const text = el.textContent.trim();
-        if (/gpt|o1|o3|o4/i.test(text)) return text;
-      }
-    }
-
-    // 2. Text-content matching near known UI regions
-    const regions = document.querySelectorAll('header, nav, [class*="model"], [data-testid*="model"]');
-    for (const region of regions) {
-      const text = region.textContent ? region.textContent.trim() : '';
-      const m = text.match(/(gpt-?4[^\s"]*|o[134]-?mini|o[134]|chatgpt[^\s"]*)/i);
-      if (m) return m[0];
-    }
-
-    return 'ChatGPT (GPT-4o)';
+    return this.scrapeModelName({
+      selectors: [
+        '[data-testid="model-switcher-dropdown-button"]',
+        '[data-testid="model-switcher-button"]',
+        'button[data-testid*="model"]',
+        '[data-testid*="model-picker"]',
+        'button[id^="radix-"]',
+        '[aria-haspopup="menu"]',
+        'div[class*="model-name"]'
+      ],
+      pattern: /gpt|o1|o3|o4/i,
+      regionSelectors: ['header', 'nav', '[class*="model"]', '[data-testid*="model"]'],
+      regionPattern: /(gpt-?4[^\s"]*|o[134]-?mini|o[134]|chatgpt[^\s"]*)/i,
+      fallback: 'ChatGPT (GPT-4o)'
+    });
   }
 
   extractMessages() {
-    const messages = [];
     const elements = this.getUniqueMessageElements([
       '[data-message-author-role]',
       '[data-testid*="conversation-turn"]',
@@ -60,35 +46,15 @@ class ChatGPTAdapter extends OmniContext.BaseAdapter {
       'main [role="article"]'
     ]);
 
-    elements.forEach((el, index) => {
-      let role = el.getAttribute('data-message-author-role');
-      if (!role) {
-        if (el.querySelector('[data-message-author-role="user"]')) {
-          role = 'user';
-        } else {
-          role = 'assistant';
-        }
-      }
-
-      const text = this.cleanElementText(el);
-      const codeText = this.extractCodeText(el);
-
-      if (text) {
-        messages.push({
-          id: el.id || `cg-msg-${index}`,
-          role: role === 'user' ? 'user' : 'assistant',
-          text,
-          codeText,
-          timestamp: Date.now()
-        });
-      }
+    return this.buildMessages(elements, {
+      idPrefix: 'cg-msg',
+      resolveRole: (el) => el.getAttribute('data-message-author-role') ||
+        (el.querySelector('[data-message-author-role="user"]') ? 'user' : 'assistant')
     });
-
-    return messages;
   }
 
   getChatInput() {
-    return document.querySelector('#prompt-textarea') || document.querySelector('textarea');
+    return this.queryFirst(['#prompt-textarea', 'textarea']);
   }
 }
 

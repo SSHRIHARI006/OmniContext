@@ -6,8 +6,6 @@
  * falls back to DOM scraping.
  */
 
-const ModelRegistry = OmniContext.ModelRegistry;
-
 class BaseAdapter {
   constructor(config = {}) {
     this.platformKey = config.platformKey || 'generic';
@@ -52,6 +50,45 @@ class BaseAdapter {
   }
 
   /**
+   * Shared DOM model-name scrape (SPEC-1 §3.4 phase 2). Selector candidates
+   * are tried first, then a looser text match over UI regions, then the
+   * platform fallback name.
+   * @param {Object} options
+   * @param {string[]} options.selectors Stable data-testid / aria / class selectors.
+   * @param {RegExp} [options.pattern] Candidate text must match when provided.
+   * @param {string[]} [options.regionSelectors] Regions scanned for loose text matches.
+   * @param {RegExp} [options.regionPattern] Extraction regex for region text.
+   * @param {string} [options.fallback] Returned when nothing matches.
+   * @returns {string}
+   */
+  scrapeModelName(options) {
+    const { DomUtils } = OmniContext;
+    const {
+      selectors = [],
+      pattern = null,
+      regionSelectors = [],
+      regionPattern = null,
+      fallback = ''
+    } = options;
+
+    for (const selector of selectors) {
+      for (const element of document.querySelectorAll(selector)) {
+        const text = DomUtils.elementText(element);
+        if (text && (!pattern || pattern.test(text))) return text;
+      }
+    }
+
+    if (regionPattern) {
+      for (const region of DomUtils.queryAll(regionSelectors)) {
+        const match = DomUtils.elementText(region).match(regionPattern);
+        if (match) return match[0];
+      }
+    }
+
+    return fallback;
+  }
+
+  /**
    * Two-phase model resolution (SPEC-1 §3.4):
    * Phase 1 — check the network-intercepted API model ID.
    * Phase 2 — fall back to DOM scraping + registry match.
@@ -59,13 +96,13 @@ class BaseAdapter {
    */
   getDetectedModel() {
     if (this._interceptedModelId) {
-      const match = ModelRegistry.getModelByApiId(this._interceptedModelId);
+      const match = OmniContext.ModelRegistry.getModelByApiId(this._interceptedModelId);
       if (match) {
         return { ...match, source: 'network' };
       }
     }
     const scrapedText = this.extractModelName();
-    return { ...ModelRegistry.getModelInfo(this.platformKey, scrapedText), source: 'dom' };
+    return { ...OmniContext.ModelRegistry.getModelInfo(this.platformKey, scrapedText), source: 'dom' };
   }
 
   /**
@@ -104,6 +141,36 @@ class BaseAdapter {
    */
   extractMessages() {
     return [];
+  }
+
+  /**
+   * Builds message payloads from message elements, skipping empty ones.
+   * @param {Iterable<HTMLElement>} elements
+   * @param {Object} options
+   * @param {string} options.idPrefix Prefix for synthesized message IDs.
+   * @param {(element: HTMLElement) => string} options.resolveRole Anything
+   *   other than 'user' is normalized to 'assistant'.
+   * @param {boolean} [options.useElementId=true] Prefer the element's own id.
+   * @returns {Array<{ id: string, role: 'user'|'assistant', text: string, codeText: string, timestamp: number }>}
+   */
+  buildMessages(elements, options) {
+    const { idPrefix, resolveRole, useElementId = true } = options;
+    const messages = [];
+
+    Array.from(elements).forEach((element, index) => {
+      const text = this.cleanElementText(element);
+      if (!text) return;
+
+      messages.push({
+        id: (useElementId && element.id) || `${idPrefix}-${index}`,
+        role: resolveRole(element) === 'user' ? 'user' : 'assistant',
+        text,
+        codeText: this.extractCodeText(element),
+        timestamp: Date.now()
+      });
+    });
+
+    return messages;
   }
 
   /**
@@ -148,11 +215,38 @@ class BaseAdapter {
   }
 
   /**
+   * First element matching a selector cascade (earlier selectors win).
+   * @param {string[]} selectors
+   * @returns {HTMLElement|null}
+   */
+  queryFirst(selectors) {
+    return OmniContext.DomUtils.queryFirst(selectors);
+  }
+
+  /**
+   * Every element matching any selector, in document order.
+   * @param {string[]} selectors
+   * @returns {HTMLElement[]}
+   */
+  queryAll(selectors) {
+    return OmniContext.DomUtils.queryAll(selectors);
+  }
+
+  /**
+   * Elements of the first selector that yields any match.
+   * @param {string[]} selectors
+   * @returns {HTMLElement[]}
+   */
+  queryFirstNonEmpty(selectors) {
+    return OmniContext.DomUtils.queryFirstNonEmpty(selectors);
+  }
+
+  /**
    * Locates the primary text input element in the chat interface.
    * @returns {HTMLElement|null}
    */
   getChatInput() {
-    return document.querySelector('textarea, div[contenteditable="true"]');
+    return this.queryFirst(['textarea', 'div[contenteditable="true"]']);
   }
 }
 

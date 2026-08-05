@@ -44,9 +44,12 @@
       ],
       "js": [
         "src/content/omniNamespace.js",
+        "src/core/domUtils.js",
+        "src/core/browserApi.js",
         "src/core/modelRegistry.js",
         "src/core/tokenEngine.js",
         "src/core/metricsCalculator.js",
+        "src/core/metricsView.js",
         "src/core/migrationPrompt.js",
         "src/content/adapters/baseAdapter.js",
         "src/content/adapters/chatgptAdapter.js",
