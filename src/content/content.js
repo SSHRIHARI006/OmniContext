@@ -5,24 +5,9 @@
  * sync, listens for network-intercepted model IDs, and renders the Shadow DOM
  * overlay HUD.
  *
- * The content bundle uses the native browser/chrome API fallback so it can
- * run directly in every generated browser build.
+ * Extension APIs go through OmniContext.BrowserApi so the same source runs
+ * directly in every generated browser build.
  */
-
-const {
-  ChatGPTAdapter,
-  ClaudeAdapter,
-  GeminiAdapter,
-  DeepSeekAdapter,
-  KimiAdapter,
-  QwenAdapter,
-  GenericAdapter,
-  MetricsCalculator,
-  MigrationPromptEngine,
-  ShadowContainer
-} = OmniContext;
-
-const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 
 // Firefox MV3 does not support content_scripts "world": "MAIN", so the
 // interceptor is injected dynamically there via a web-accessible script tag.
@@ -43,7 +28,7 @@ class ContentOrchestrator {
 
   async init() {
     this.selectAdapter();
-    this.shadowUI = new ShadowContainer(() => this.handlePrepareSummary());
+    this.shadowUI = new OmniContext.ShadowContainer(() => this.handlePrepareSummary());
     this.setupMessageListeners();
     this.setupStorageListeners();
     await this.loadDebugState();
@@ -58,13 +43,7 @@ class ContentOrchestrator {
   }
 
   async loadDebugState() {
-    if (!extApi?.storage?.local) return;
-    try {
-      const result = await extApi.storage.local.get('debugEnabled');
-      this.debugEnabled = result?.debugEnabled === true;
-    } catch (error) {
-      this.debugEnabled = false;
-    }
+    this.debugEnabled = (await OmniContext.BrowserApi.getStoredValue('debugEnabled', false)) === true;
   }
 
   debugLog(message, details = {}) {
@@ -73,28 +52,19 @@ class ContentOrchestrator {
   }
 
   async checkEnabledState() {
-    if (extApi && extApi.storage && extApi.storage.local) {
-      try {
-        const res = await extApi.storage.local.get('extensionEnabled');
-        this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-      } catch (e) {
-        this.isEnabled = true;
-      }
-    } else {
-      this.isEnabled = true;
-    }
+    this.isEnabled = await OmniContext.BrowserApi.getStoredValue('extensionEnabled', true);
     this.shadowUI.setVisible(this.isEnabled);
   }
 
   selectAdapter() {
     const hostname = window.location.hostname;
     const adapters = [
-      new ChatGPTAdapter(),
-      new ClaudeAdapter(),
-      new GeminiAdapter(),
-      new DeepSeekAdapter(),
-      new KimiAdapter(),
-      new QwenAdapter()
+      new OmniContext.ChatGPTAdapter(),
+      new OmniContext.ClaudeAdapter(),
+      new OmniContext.GeminiAdapter(),
+      new OmniContext.DeepSeekAdapter(),
+      new OmniContext.KimiAdapter(),
+      new OmniContext.QwenAdapter()
     ];
 
     for (const ad of adapters) {
@@ -105,7 +75,7 @@ class ContentOrchestrator {
     }
 
     if (!this.adapter) {
-      this.adapter = new GenericAdapter();
+      this.adapter = new OmniContext.GenericAdapter();
     }
   }
 
@@ -157,7 +127,7 @@ class ContentOrchestrator {
       if (existing) return;
       const script = document.createElement('script');
       script.id = 'omni-interceptor-script';
-      script.src = (extApi || chrome).runtime.getURL('src/content/interceptor.js');
+      script.src = OmniContext.BrowserApi.api.runtime.getURL('src/content/interceptor.js');
       (document.head || document.documentElement).appendChild(script);
     } catch (e) {
       console.debug('[OmniContext] Could not inject interceptor:', e);
@@ -177,7 +147,7 @@ class ContentOrchestrator {
         modelSource: this.modelInfo.source
       });
 
-      const metrics = MetricsCalculator.calculateMetrics(messages, {
+      const metrics = OmniContext.MetricsCalculator.calculateMetrics(messages, {
         hardLimitTokens: this.modelInfo.limit,
         tokenMultiplier: this.modelInfo.multiplier || this.adapter.tokenMultiplier
       });
@@ -203,21 +173,13 @@ class ContentOrchestrator {
       timestamp: Date.now()
     };
 
-    if (extApi && extApi.runtime && extApi.runtime.sendMessage) {
-      try {
-        extApi.runtime.sendMessage(payload).catch(() => {});
-      } catch (e) {}
-    }
-
-    if (extApi && extApi.storage && extApi.storage.local) {
-      try {
-        extApi.storage.local.set({ activeMetrics: payload });
-      } catch (e) {}
-    }
+    OmniContext.BrowserApi.sendRuntimeMessage(payload);
+    OmniContext.BrowserApi.setStoredValues({ activeMetrics: payload });
   }
 
   handlePrepareSummary() {
     if (!this.isEnabled) return;
+    const { MigrationPromptEngine } = OmniContext;
     const input = this.adapter.getChatInput() || MigrationPromptEngine.findChatInput();
     const success = MigrationPromptEngine.injectPromptIntoInput(input);
 
@@ -252,45 +214,40 @@ class ContentOrchestrator {
   }
 
   setupStorageListeners() {
-    if (extApi && extApi.storage && extApi.storage.onChanged) {
-      extApi.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && changes.extensionEnabled !== undefined) {
-          this.isEnabled = !!changes.extensionEnabled.newValue;
-          this.shadowUI.setVisible(this.isEnabled);
-          if (this.isEnabled) {
-            this.performScan();
-          }
-        }
-      });
-    }
+    OmniContext.BrowserApi.onStorageChanged((changes) => {
+      if (changes.extensionEnabled === undefined) return;
+      this.isEnabled = !!changes.extensionEnabled.newValue;
+      this.shadowUI.setVisible(this.isEnabled);
+      if (this.isEnabled) {
+        this.performScan();
+      }
+    });
   }
 
   setupMessageListeners() {
-    if (extApi && extApi.runtime && extApi.runtime.onMessage) {
-      extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'SET_DEBUG_STATE') {
-          this.debugEnabled = !!request.enabled;
-          sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });
-        } else if (request.action === 'SET_EXTENSION_STATE') {
-          this.isEnabled = !!request.enabled;
-          this.shadowUI.setVisible(this.isEnabled);
-          if (this.isEnabled) {
-            this.performScan();
-          }
-          sendResponse({ status: 'ok', enabled: this.isEnabled });
-        } else if (request.action === 'GET_METRICS') {
-          if (this.isEnabled) this.performScan();
-          sendResponse({ metrics: this.latestMetrics, platformKey: this.adapter.platformKey, modelName: this.modelInfo ? this.modelInfo.name : 'Default Model', isEnabled: this.isEnabled });
-        } else if (request.action === 'PREPARE_SUMMARY') {
-          if (this.isEnabled) this.handlePrepareSummary();
-          sendResponse({ status: 'ok' });
-        } else if (request.action === 'FORCE_RESCAN') {
-          if (this.isEnabled) this.performScan();
-          sendResponse({ metrics: this.latestMetrics });
+    OmniContext.BrowserApi.onRuntimeMessage((request, sender, sendResponse) => {
+      if (request.action === 'SET_DEBUG_STATE') {
+        this.debugEnabled = !!request.enabled;
+        sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });
+      } else if (request.action === 'SET_EXTENSION_STATE') {
+        this.isEnabled = !!request.enabled;
+        this.shadowUI.setVisible(this.isEnabled);
+        if (this.isEnabled) {
+          this.performScan();
         }
-        return true;
-      });
-    }
+        sendResponse({ status: 'ok', enabled: this.isEnabled });
+      } else if (request.action === 'GET_METRICS') {
+        if (this.isEnabled) this.performScan();
+        sendResponse({ metrics: this.latestMetrics, platformKey: this.adapter.platformKey, modelName: this.modelInfo ? this.modelInfo.name : 'Default Model', isEnabled: this.isEnabled });
+      } else if (request.action === 'PREPARE_SUMMARY') {
+        if (this.isEnabled) this.handlePrepareSummary();
+        sendResponse({ status: 'ok' });
+      } else if (request.action === 'FORCE_RESCAN') {
+        if (this.isEnabled) this.performScan();
+        sendResponse({ metrics: this.latestMetrics });
+      }
+      return true;
+    });
   }
 }
 

@@ -17,31 +17,20 @@ class KimiAdapter extends OmniContext.BaseAdapter {
   }
 
   extractModelName() {
-    const el = document.querySelector('.model-select, .k15-tag');
-    return el && el.textContent ? el.textContent.trim() : 'Kimi Moonshot';
+    return this.scrapeModelName({
+      selectors: ['.model-select', '.k15-tag'],
+      fallback: 'Kimi Moonshot'
+    });
   }
 
   extractMessages() {
-    const messages = [];
-    const elements = document.querySelectorAll('.segment-content, .chat-segment, .chat-message');
+    const elements = this.queryAll(['.segment-content', '.chat-segment', '.chat-message']);
 
-    elements.forEach((el, index) => {
-      const role = el.classList.contains('user') ? 'user' : 'assistant';
-      const text = this.cleanElementText(el);
-      const codeText = this.extractCodeText(el);
-
-      if (text) {
-        messages.push({
-          id: `kimi-${index}`,
-          role,
-          text,
-          codeText,
-          timestamp: Date.now()
-        });
-      }
+    return this.buildMessages(elements, {
+      idPrefix: 'kimi',
+      useElementId: false,
+      resolveRole: (el) => (el.classList.contains('user') ? 'user' : 'assistant')
     });
-
-    return messages;
   }
 }
 

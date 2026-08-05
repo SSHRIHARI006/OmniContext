@@ -3,8 +3,7 @@
  * Self-contained, draggable, resizable, and removable UI component displaying live context metrics.
  */
 
-const MigrationPromptEngine = OmniContext.MigrationPromptEngine;
-const ModelRegistry = OmniContext.ModelRegistry;
+const OMNI_CAPACITY_COLORS = { high: '#f87171', medium: '#facc15', low: '#38bdf8' };
 
 class ShadowContainer {
   constructor(onPrepareSummary = null) {
@@ -244,20 +243,20 @@ class ShadowContainer {
       if (this.onPrepareSummary) {
         this.onPrepareSummary();
       } else {
-        MigrationPromptEngine.injectPromptIntoInput();
+        OmniContext.MigrationPromptEngine.injectPromptIntoInput();
       }
     });
   }
 
   updateMetrics(metrics, platformKey = 'generic', modelName = '') {
     if (!metrics) return;
+    const { MetricsView } = OmniContext;
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
-    const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
-    const healthScore = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
+    const tokens = MetricsView.formatTokenCounts(metrics);
+    const healthScore = MetricsView.resolveHealthScore(metrics);
     const rotScore = metrics.rotScore !== undefined ? metrics.rotScore : 0;
 
-    this.shadowRoot.getElementById('omni-badge-summary').innerText = `${formattedTotal} T | ${healthScore}% Health`;
+    this.shadowRoot.getElementById('omni-badge-summary').innerText = `${tokens.total} T | ${healthScore}% Health`;
     this.shadowRoot.getElementById('omni-dot').className = `omni-status-dot omni-status-${metrics.statusLevel}`;
     
     this.shadowRoot.getElementById('omni-platform-badge').innerText = platformKey;
@@ -265,22 +264,17 @@ class ShadowContainer {
       this.shadowRoot.getElementById('omni-model-title').innerText = modelName;
     }
 
-    this.shadowRoot.getElementById('omni-cap-text').innerText = `${metrics.totalTokens.toLocaleString()} / ${formattedLimit} (${metrics.capacityUsed}%)`;
+    this.shadowRoot.getElementById('omni-cap-text').innerText = `${metrics.totalTokens.toLocaleString()} / ${tokens.limit} (${metrics.capacityUsed}%)`;
 
     const capBar = this.shadowRoot.getElementById('omni-cap-bar');
     capBar.style.width = `${metrics.capacityUsed}%`;
-    if (metrics.capacityUsed > 80) capBar.style.background = '#f87171';
-    else if (metrics.capacityUsed > 50) capBar.style.background = '#facc15';
-    else capBar.style.background = '#38bdf8';
+    capBar.style.background = OMNI_CAPACITY_COLORS[MetricsView.capacityTier(metrics.capacityUsed)];
 
     this.shadowRoot.getElementById('omni-bloat-text').innerText = `${healthScore} / 100 (${metrics.statusLevel.toUpperCase()})`;
 
     const bloatBar = this.shadowRoot.getElementById('omni-bloat-bar');
     bloatBar.style.width = `${healthScore}%`;
-    if (healthScore >= 85) bloatBar.style.background = '#f87171';
-    else if (healthScore >= 65) bloatBar.style.background = '#f97316';
-    else if (healthScore >= 40) bloatBar.style.background = '#facc15';
-    else bloatBar.style.background = '#4ade80';
+    bloatBar.style.background = MetricsView.statusColor(MetricsView.statusTier(healthScore));
 
     const bloatVal = this.shadowRoot.getElementById('omni-bloat-val');
     const rotVal = this.shadowRoot.getElementById('omni-rot-val');
@@ -291,21 +285,16 @@ class ShadowContainer {
     this.shadowRoot.getElementById('omni-stat-code').innerText = `${metrics.codeDensity}%`;
     this.shadowRoot.getElementById('omni-stat-ratio').innerText = `${metrics.userRatio}/${metrics.assistantRatio}`;
 
-    const statusColors = {
-      optimal: '#4ade80',
-      dense: '#facc15',
-      degrading: '#f97316',
-      bloated: '#f87171'
-    };
     const statStatus = this.shadowRoot.getElementById('omni-stat-status');
     statStatus.innerText = metrics.statusLevel.toUpperCase();
-    statStatus.style.color = statusColors[metrics.statusLevel] || '#4ade80';
+    statStatus.style.color = MetricsView.statusColor(metrics.statusLevel);
 
     const migrateBtn = this.shadowRoot.getElementById('omni-migrate-btn');
-    if (healthScore >= 85) {
+    const healthTier = MetricsView.statusTier(healthScore);
+    if (healthTier === 'bloated') {
       migrateBtn.className = 'omni-btn omni-btn-danger';
       migrateBtn.innerText = 'Context Bloated: Prepare Summary';
-    } else if (healthScore >= 65) {
+    } else if (healthTier === 'degrading') {
       migrateBtn.className = 'omni-btn omni-btn-warn';
       migrateBtn.innerText = 'Context Degrading: Prepare Summary';
     } else {

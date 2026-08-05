@@ -17,26 +17,15 @@ class GenericAdapter extends OmniContext.BaseAdapter {
   }
 
   extractMessages() {
-    const messages = [];
-
     // Generic query selectors according to FR-1.2: article, [role="data-message"], .message, .chat-message
-    const selectors = [
+    let elements = this.queryFirstNonEmpty([
       'article',
       '[role="data-message"]',
       '.message',
       '.chat-message',
       '.msg',
       '.conversation-turn'
-    ];
-
-    let elements = [];
-    for (const sel of selectors) {
-      const found = document.querySelectorAll(sel);
-      if (found && found.length > 0) {
-        elements = Array.from(found);
-        break;
-      }
-    }
+    ]);
 
     // If no specific message elements found, look for text blocks inside main
     if (elements.length === 0) {
@@ -46,30 +35,16 @@ class GenericAdapter extends OmniContext.BaseAdapter {
       }
     }
 
-    elements.forEach((el, index) => {
-      let role = 'assistant';
-      const className = (el.className || '').toString().toLowerCase();
-      const dataset = JSON.stringify(el.dataset || {});
-
-      if (className.includes('user') || dataset.includes('user') || el.getAttribute('data-role') === 'user') {
-        role = 'user';
-      }
-
-      const text = this.cleanElementText(el);
-      const codeText = this.extractCodeText(el);
-
-      if (text.length > 0) {
-        messages.push({
-          id: el.id || `gen-msg-${index}`,
-          role,
-          text,
-          codeText,
-          timestamp: Date.now()
-        });
+    return this.buildMessages(elements, {
+      idPrefix: 'gen-msg',
+      resolveRole: (el) => {
+        const className = (el.className || '').toString().toLowerCase();
+        const dataset = JSON.stringify(el.dataset || {});
+        const isUser = className.includes('user') || dataset.includes('user') ||
+          el.getAttribute('data-role') === 'user';
+        return isUser ? 'user' : 'assistant';
       }
     });
-
-    return messages;
   }
 }
 

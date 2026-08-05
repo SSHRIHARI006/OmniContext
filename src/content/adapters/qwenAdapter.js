@@ -17,31 +17,20 @@ class QwenAdapter extends OmniContext.BaseAdapter {
   }
 
   extractModelName() {
-    const el = document.querySelector('.model-tag, .qwen-model');
-    return el && el.textContent ? el.textContent.trim() : 'Qwen 2.5';
+    return this.scrapeModelName({
+      selectors: ['.model-tag', '.qwen-model'],
+      fallback: 'Qwen 2.5'
+    });
   }
 
   extractMessages() {
-    const messages = [];
-    const elements = document.querySelectorAll('.chat-item, .message-item');
+    const elements = this.queryAll(['.chat-item', '.message-item']);
 
-    elements.forEach((el, index) => {
-      const role = el.classList.contains('user') ? 'user' : 'assistant';
-      const text = this.cleanElementText(el);
-      const codeText = this.extractCodeText(el);
-
-      if (text) {
-        messages.push({
-          id: `qwen-${index}`,
-          role,
-          text,
-          codeText,
-          timestamp: Date.now()
-        });
-      }
+    return this.buildMessages(elements, {
+      idPrefix: 'qwen',
+      useElementId: false,
+      resolveRole: (el) => (el.classList.contains('user') ? 'user' : 'assistant')
     });
-
-    return messages;
   }
 }
 

@@ -20,87 +20,56 @@ class GeminiAdapter extends OmniContext.BaseAdapter {
   }
 
   extractModelName() {
-    // 1. Stable data-test-id / aria attributes first
-    const selectors = [
-      '[data-test-id="model-picker-button"]',
-      '[data-testid="model-picker-button"]',
-      '.model-picker-button',
-      'mat-select',
-      '.model-title',
-      '[aria-label*="Gemini"]',
-      'button[aria-haspopup="menu"]'
-    ];
-
-    for (const sel of selectors) {
-      const elements = document.querySelectorAll(sel);
-      for (const el of elements) {
-        const text = el.textContent ? el.textContent.trim() : '';
-        if (/flash|pro|gemini|thinking|2\.5|2\.0|1\.5/i.test(text)) {
-          return text;
-        }
-      }
-    }
-
-    // 2. Text-content matching in header
-    const regions = document.querySelectorAll('header, nav, [class*="model"], [data-test*="model"]');
-    for (const region of regions) {
-      const text = region.textContent ? region.textContent.trim() : '';
-      const m = text.match(/(gemini[^\s"]*|2\.5[^\s"]*pro|2\.5[^\s"]*flash|2\.0[^\s"]*flash|1\.5[^\s"]*)/i);
-      if (m) return m[0];
-    }
-
-    return 'Gemini (default)';
+    return this.scrapeModelName({
+      selectors: [
+        '[data-test-id="model-picker-button"]',
+        '[data-testid="model-picker-button"]',
+        '.model-picker-button',
+        'mat-select',
+        '.model-title',
+        '[aria-label*="Gemini"]',
+        'button[aria-haspopup="menu"]'
+      ],
+      pattern: /flash|pro|gemini|thinking|2\.5|2\.0|1\.5/i,
+      regionSelectors: ['header', 'nav', '[class*="model"]', '[data-test*="model"]'],
+      regionPattern: /(gemini[^\s"]*|2\.5[^\s"]*pro|2\.5[^\s"]*flash|2\.0[^\s"]*flash|1\.5[^\s"]*)/i,
+      fallback: 'Gemini (default)'
+    });
   }
 
   extractMessages() {
-    const messages = [];
-
-    const querySelectors = [
+    const elements = this.getUniqueMessageElements([
       'message-content',
       '.user-query',
       '.query-content',
       '.model-response-text',
       '.response-container',
       '[data-testid*="user-query"]',
-      '[data-testid*="assistant-response"]'
-    ];
-
-    const elements = this.getUniqueMessageElements([
-      ...querySelectors,
+      '[data-testid*="assistant-response"]',
       '[data-testid*="message"]',
       '[data-message-id]',
       'main [role="article"]',
       'main [role="listitem"]'
     ]);
 
-    elements.forEach((el, index) => {
-      let role = 'assistant';
-      if (el.classList.contains('user-query') || el.classList.contains('query-content') ||
-          el.closest('.user-query-container') || (el.getAttribute('data-testid') || '').includes('user-query')) {
-        role = 'user';
-      }
-
-      const text = this.cleanElementText(el);
-      const codeText = this.extractCodeText(el);
-
-      if (text) {
-        messages.push({
-          id: el.id || `gemini-msg-${index}`,
-          role,
-          text,
-          codeText,
-          timestamp: Date.now()
-        });
+    return this.buildMessages(elements, {
+      idPrefix: 'gemini-msg',
+      resolveRole: (el) => {
+        const isUser = el.classList.contains('user-query') ||
+          el.classList.contains('query-content') ||
+          el.closest('.user-query-container') ||
+          (el.getAttribute('data-testid') || '').includes('user-query');
+        return isUser ? 'user' : 'assistant';
       }
     });
-
-    return messages;
   }
 
   getChatInput() {
-    return document.querySelector('.input-area textarea') ||
-           document.querySelector('textarea[aria-label]') ||
-           document.querySelector('div[contenteditable="true"]');
+    return this.queryFirst([
+      '.input-area textarea',
+      'textarea[aria-label]',
+      'div[contenteditable="true"]'
+    ]);
   }
 }
 

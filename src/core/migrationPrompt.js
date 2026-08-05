@@ -54,7 +54,7 @@ class MigrationPromptEngine {
    * @returns {HTMLElement|null}
    */
   static findChatInput() {
-    const selectors = [
+    return OmniContext.DomUtils.queryFirst([
       '#prompt-textarea',                              // ChatGPT
       'div[contenteditable="true"][data-placeholder]',  // Claude / General
       '.ProseMirror[contenteditable="true"]',           // Claude / DeepSeek
@@ -62,19 +62,11 @@ class MigrationPromptEngine {
       'div[contenteditable="true"]',                   // Generic contenteditable
       'textarea[placeholder]',                          // Generic textareas
       'textarea'
-    ];
-
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el && this.isVisible(el)) {
-        return el;
-      }
-    }
-    return null;
+    ], { visibleOnly: true });
   }
 
   static isVisible(el) {
-    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    return OmniContext.DomUtils.isVisible(el);
   }
 }
 

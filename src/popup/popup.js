@@ -4,8 +4,31 @@
  * Switch, Storage Sync, and the SPEC-1 combined Health / Bloat / Rot display.
  */
 
-const browser = globalThis.browser || globalThis.chrome;
-const { MetricsCalculator, MigrationPromptEngine, ModelRegistry } = globalThis.OmniContext;
+const OMNI_CAPACITY_BACKGROUNDS = {
+  high: 'var(--color-bloated)',
+  medium: 'var(--color-dense)',
+  low: 'linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo))'
+};
+
+const OMNI_STATUS_DESCRIPTIONS = {
+  bloated: 'Critical context saturation. Migration strongly recommended.',
+  degrading: 'Significant rot detected; consider summarizing.',
+  dense: 'Moderate redundancy or attention dilution risk.',
+  optimal: 'Optimal context retention and response speed.'
+};
+
+const OMNI_STATUS_TITLES = {
+  bloated: 'Bloated',
+  degrading: 'Degrading',
+  dense: 'Dense',
+  optimal: 'Optimal'
+};
+
+const OMNI_MIGRATE_BUTTON_STYLES = {
+  bloated: { background: 'linear-gradient(135deg, #dc2626, #991b1b)', label: 'Context Bloated: Inject Summary Prompt' },
+  degrading: { background: 'linear-gradient(135deg, #ea580c, #9a3412)', label: 'Context Degrading: Prepare Summary' },
+  normal: { background: 'linear-gradient(135deg, #0284c7, #4f46e5)', label: 'Prepare Context Summary' }
+};
 
 class PopupController {
   constructor() {
@@ -47,48 +70,32 @@ class PopupController {
   }
 
   async loadToggleState() {
-    try {
-      const res = await browser.storage.local.get('extensionEnabled');
-      this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-    } catch (e) {
-      this.isEnabled = true;
-    }
+    this.isEnabled = await OmniContext.BrowserApi.getStoredValue('extensionEnabled', true);
     this.updateToggleUI(this.isEnabled);
   }
 
   async loadDebugState() {
-    try {
-      const result = await browser.storage.local.get('debugEnabled');
-      document.getElementById('debugToggle').checked = result?.debugEnabled === true;
-    } catch (e) {
-      document.getElementById('debugToggle').checked = false;
-    }
+    const debugEnabled = await OmniContext.BrowserApi.getStoredValue('debugEnabled', false);
+    document.getElementById('debugToggle').checked = debugEnabled === true;
   }
 
   async handleDebugToggle(enabled) {
-    try {
-      await browser.storage.local.set({ debugEnabled: enabled });
-      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-      if (tabs?.[0]?.id) {
-        await browser.tabs.sendMessage(tabs[0].id, { action: 'SET_DEBUG_STATE', enabled: !!enabled });
-      }
-      this.showToast(enabled ? 'Debug logging enabled' : 'Debug logging disabled');
-    } catch (e) {
+    const stored = await OmniContext.BrowserApi.setStoredValues({ debugEnabled: enabled });
+    if (!stored) {
       this.showToast('Could not update debug logging');
+      return;
     }
+
+    await OmniContext.BrowserApi.sendMessageToActiveTab({ action: 'SET_DEBUG_STATE', enabled: !!enabled });
+    this.showToast(enabled ? 'Debug logging enabled' : 'Debug logging disabled');
   }
 
   async handleToggleChange(enabled) {
     this.isEnabled = enabled;
     this.updateToggleUI(enabled);
 
-    try {
-      await browser.storage.local.set({ extensionEnabled: enabled });
-      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-      if (tabs && tabs[0] && tabs[0].id) {
-        browser.tabs.sendMessage(tabs[0].id, { action: 'SET_EXTENSION_STATE', enabled });
-      }
-    } catch (e) {}
+    await OmniContext.BrowserApi.setStoredValues({ extensionEnabled: enabled });
+    await OmniContext.BrowserApi.sendMessageToActiveTab({ action: 'SET_EXTENSION_STATE', enabled });
 
     this.showToast(enabled ? 'Monitoring Enabled' : 'Monitoring Disabled');
     if (enabled) {
@@ -118,19 +125,11 @@ class PopupController {
   async fetchMetricsFromActiveTab() {
     if (!this.isEnabled) return;
 
-    try {
-      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-      const activeTab = tabs && tabs[0];
-      if (activeTab && activeTab.id) {
-        const response = await browser.tabs.sendMessage(activeTab.id, { action: 'GET_METRICS' });
-        if (response && response.metrics) {
-          this.setDataMode('live');
-          this.updateUI(response.metrics, response.platformKey, response.modelName);
-          return;
-        }
-      }
-    } catch (err) {
-      console.debug('[OmniContext Popup] Error fetching active tab metrics:', err);
+    const { response } = await OmniContext.BrowserApi.sendMessageToActiveTab({ action: 'GET_METRICS' });
+    if (response && response.metrics) {
+      this.setDataMode('live');
+      this.updateUI(response.metrics, response.platformKey, response.modelName);
+      return;
     }
 
     // Fallback to storage
@@ -138,24 +137,20 @@ class PopupController {
   }
 
   async fetchFromStorage() {
-    try {
-      const result = await browser.storage.local.get('activeMetrics');
-      if (result && result.activeMetrics && result.activeMetrics.metrics) {
-        this.setDataMode('live');
-        this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
-      } else {
-        this.showToast('No live data — showing simulation');
-        this.runSimulation('gemini');
-      }
-    } catch (e) {
-      this.showToast('No live data — showing simulation');
-      this.runSimulation('gemini');
+    const activeMetrics = await OmniContext.BrowserApi.getStoredValue('activeMetrics', null);
+    if (activeMetrics && activeMetrics.metrics) {
+      this.setDataMode('live');
+      this.updateUI(activeMetrics.metrics, activeMetrics.platformKey, activeMetrics.modelName);
+      return;
     }
+
+    this.showToast('No live data — showing simulation');
+    this.runSimulation('gemini');
   }
 
   runSimulation(platformKey = 'gemini') {
     this.setDataMode('simulation');
-    const modelInfo = ModelRegistry.getModelInfo(platformKey);
+    const modelInfo = OmniContext.ModelRegistry.getModelInfo(platformKey);
 
     const mockMessages = [
       { id: '1', role: 'user', text: 'Can you write a complete specification and code architecture for OmniContext extension?' },
@@ -166,7 +161,7 @@ class PopupController {
       { id: '6', role: 'assistant', text: 'Adding bloat formula:\n```typescript\ninterface MetricsPayload { totalTokens: number; bloatScore: number; }\n```\n' + 'Additional details '.repeat(600), codeText: 'interface MetricsPayload { totalTokens: number; bloatScore: number; }' }
     ];
 
-    const metrics = MetricsCalculator.calculateMetrics(mockMessages, {
+    const metrics = OmniContext.MetricsCalculator.calculateMetrics(mockMessages, {
       hardLimitTokens: modelInfo.limit,
       tokenMultiplier: modelInfo.multiplier || 1.0
     });
@@ -188,14 +183,15 @@ class PopupController {
   }
 
   updateUI(metrics, platformKey = 'generic', modelName = '') {
+    const { MetricsView } = OmniContext;
     this.activeMetrics = metrics;
     this.platformKey = platformKey;
-    this.modelName = modelName || ModelRegistry.getModelInfo(platformKey).name;
+    this.modelName = modelName || OmniContext.ModelRegistry.getModelInfo(platformKey).name;
 
     document.getElementById('platformBadge').innerText = `${this.modelName}`;
 
     // Combined Health Score (max of bloat/rot)
-    const healthScore = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
+    const healthScore = MetricsView.resolveHealthScore(metrics);
     const bloatVal = document.getElementById('bloatScoreVal');
     bloatVal.innerText = `${healthScore}`;
 
@@ -208,27 +204,11 @@ class PopupController {
     const statusText = document.getElementById('statusText');
     const statusDesc = document.getElementById('statusDesc');
 
-    if (metrics.statusLevel === 'bloated') {
-      ringFill.style.stroke = 'var(--color-bloated)';
-      statusPill.className = 'status-pill status-bloated';
-      statusText.innerText = 'Bloated';
-      statusDesc.innerText = 'Critical context saturation. Migration strongly recommended.';
-    } else if (metrics.statusLevel === 'degrading') {
-      ringFill.style.stroke = 'var(--color-degrading)';
-      statusPill.className = 'status-pill status-degrading';
-      statusText.innerText = 'Degrading';
-      statusDesc.innerText = 'Significant rot detected; consider summarizing.';
-    } else if (metrics.statusLevel === 'dense') {
-      ringFill.style.stroke = 'var(--color-dense)';
-      statusPill.className = 'status-pill status-dense';
-      statusText.innerText = 'Dense';
-      statusDesc.innerText = 'Moderate redundancy or attention dilution risk.';
-    } else {
-      ringFill.style.stroke = 'var(--color-optimal)';
-      statusPill.className = 'status-pill status-optimal';
-      statusText.innerText = 'Optimal';
-      statusDesc.innerText = 'Optimal context retention and response speed.';
-    }
+    const statusLevel = OMNI_STATUS_TITLES[metrics.statusLevel] ? metrics.statusLevel : 'optimal';
+    ringFill.style.stroke = `var(--color-${statusLevel})`;
+    statusPill.className = `status-pill status-${statusLevel}`;
+    statusText.innerText = OMNI_STATUS_TITLES[statusLevel];
+    statusDesc.innerText = OMNI_STATUS_DESCRIPTIONS[statusLevel];
 
     // Bloat / Rot sub-indicators
     const bloatDetail = document.getElementById('bloatDetailVal');
@@ -236,25 +216,17 @@ class PopupController {
     if (bloatDetail) bloatDetail.innerText = `${metrics.bloatScore}`;
     if (rotDetail) rotDetail.innerText = `${metrics.rotScore}`;
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
-    const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
-    const formattedRemaining = ModelRegistry.formatTokenCount(metrics.remainingTokens);
+    const tokens = MetricsView.formatTokenCounts(metrics);
 
-    document.getElementById('capacityRatio').innerText = `${metrics.totalTokens.toLocaleString()} / ${formattedLimit}`;
+    document.getElementById('capacityRatio').innerText = `${metrics.totalTokens.toLocaleString()} / ${tokens.limit}`;
     const capacityFill = document.getElementById('capacityFill');
     capacityFill.style.width = `${metrics.capacityUsed}%`;
-    if (metrics.capacityUsed > 80) {
-      capacityFill.style.background = 'var(--color-bloated)';
-    } else if (metrics.capacityUsed > 50) {
-      capacityFill.style.background = 'var(--color-dense)';
-    } else {
-      capacityFill.style.background = 'linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo))';
-    }
+    capacityFill.style.background = OMNI_CAPACITY_BACKGROUNDS[MetricsView.capacityTier(metrics.capacityUsed)];
 
     document.getElementById('capacityPercentText').innerText = `${metrics.capacityUsed}% Capacity Used`;
-    document.getElementById('remainingTokensText').innerText = `${formattedRemaining} Free (${formattedLimit} Max)`;
+    document.getElementById('remainingTokensText').innerText = `${tokens.remaining} Free (${tokens.limit} Max)`;
 
-    document.getElementById('metricTotalTokens').innerText = formattedTotal;
+    document.getElementById('metricTotalTokens').innerText = tokens.total;
     document.getElementById('metricTurns').innerText = metrics.turnCount;
     document.getElementById('metricCodeDensity').innerText = `${metrics.codeDensity}%`;
     document.getElementById('metricWords').innerText = metrics.totalWords.toLocaleString();
@@ -265,34 +237,24 @@ class PopupController {
     document.getElementById('userTokensVal').innerText = metrics.userTokens.toLocaleString();
     document.getElementById('assistantTokensVal').innerText = metrics.assistantTokens.toLocaleString();
 
+    const healthTier = MetricsView.statusTier(healthScore);
+    const migrateStyle = OMNI_MIGRATE_BUTTON_STYLES[healthTier] || OMNI_MIGRATE_BUTTON_STYLES.normal;
     const btnMigrate = document.getElementById('btnMigrate');
-    if (healthScore >= 85) {
-      btnMigrate.style.background = 'linear-gradient(135deg, #dc2626, #991b1b)';
-      btnMigrate.innerText = 'Context Bloated: Inject Summary Prompt';
-    } else if (healthScore >= 65) {
-      btnMigrate.style.background = 'linear-gradient(135deg, #ea580c, #9a3412)';
-      btnMigrate.innerText = 'Context Degrading: Prepare Summary';
-    } else {
-      btnMigrate.style.background = 'linear-gradient(135deg, #0284c7, #4f46e5)';
-      btnMigrate.innerText = 'Prepare Context Summary';
-    }
+    btnMigrate.style.background = migrateStyle.background;
+    btnMigrate.innerText = migrateStyle.label;
   }
 
   async handleMigrate() {
-    try {
-      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-      const activeTab = tabs && tabs[0];
-      if (activeTab && activeTab.id) {
-        browser.tabs.sendMessage(activeTab.id, { action: 'PREPARE_SUMMARY' });
-        this.showToast('Summary prompt injected');
-        return;
-      }
-    } catch (err) {}
+    const { ok } = await OmniContext.BrowserApi.sendMessageToActiveTab({ action: 'PREPARE_SUMMARY' });
+    if (ok) {
+      this.showToast('Summary prompt injected');
+      return;
+    }
     this.handleCopyPrompt();
   }
 
   handleCopyPrompt() {
-    const promptText = MigrationPromptEngine.getPromptText();
+    const promptText = OmniContext.MigrationPromptEngine.getPromptText();
     if (navigator.clipboard) {
       navigator.clipboard.writeText(promptText).then(() => {
         this.showToast('Prompt copied to clipboard');
