@@ -1,22 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import vm from 'node:vm';
+import { loadRuntime } from './helpers/loadRuntime.js';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const context = vm.createContext({ console, Set, Math, Date, String, Number, Array, Object, RegExp });
-for (const file of [
-  'src/content/omniNamespace.js',
+const { OmniContext } = loadRuntime([
   'src/core/modelRegistry.js',
   'src/core/tokenEngine.js',
   'src/core/metricsCalculator.js'
-]) {
-  vm.runInContext(readFileSync(join(ROOT, file), 'utf8'), context, { filename: file });
-}
+]);
 
-const { MetricsCalculator, ModelRegistry } = context.OmniContext;
+const { MetricsCalculator, ModelRegistry } = OmniContext;
 
 test('ModelRegistry: getModelByApiId resolves network IDs', () => {
   const cases = [

@@ -82,8 +82,15 @@ npm run build          # validate manifests + copy direct source files to both d
 npm run build:chrome   # build dist/chrome/ only
 npm run build:firefox  # build dist/firefox/ only
 npm test               # run unit and source-compliance tests
+npm run test:coverage  # same tests plus a per-file coverage report
 npm run package        # create Chrome and Firefox ZIPs
 ```
+
+Tests are dependency-free: runtime sources are evaluated in a `node:vm` context
+(`tests/helpers/loadRuntime.js`) against a minimal DOM double
+(`tests/helpers/fakeDom.js`). The UI layers — `src/content/content.js`,
+`src/content/ui/shadowContainer.js` and `src/popup/popup.js` — are not covered by
+unit tests and are verified by loading the extension in a browser.
 
 The build produces:
 - `dist/chrome/` — Chrome, Edge, Brave, Opera, Vivaldi, Arc (`background.service_worker`, `"world": "MAIN"` interceptor)
