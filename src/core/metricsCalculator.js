@@ -21,6 +21,9 @@ class MetricsCalculator {
    * @returns {Object} MetricsPayload
    */
   static calculateMetrics(messages = [], platformConfig = {}) {
+    if (!Array.isArray(messages)) {
+      throw new TypeError(`calculateMetrics expects an array of messages, received ${typeof messages}`);
+    }
     const contextLimit = platformConfig.hardLimitTokens || platformConfig.contextLimit || 128000;
     const multiplier = platformConfig.tokenMultiplier || 1.0;
 

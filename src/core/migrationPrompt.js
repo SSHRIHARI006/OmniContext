@@ -26,7 +26,7 @@ class MigrationPromptEngine {
     }
 
     if (!inputElement) {
-      console.warn('[OmniContext] Could not find input element to inject summary prompt.');
+      OmniContext.logWarn('Could not find an input element to inject the summary prompt into', new Error('No chat input found'));
       return false;
     }
 
@@ -41,10 +41,15 @@ class MigrationPromptEngine {
         // Clear existing content or insert text cleanly
         inputElement.innerText = MIGRATION_PROMPT_TEXT;
         inputElement.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: MIGRATION_PROMPT_TEXT }));
+      } else {
+        OmniContext.logWarn('Chat input is neither a text field nor contenteditable', new Error('Unsupported input element'), {
+          tagName: inputElement.tagName
+        });
+        return false;
       }
       return true;
-    } catch (err) {
-      console.error('[OmniContext] Failed injecting prompt:', err);
+    } catch (error) {
+      OmniContext.logError('Failed injecting the summary prompt', error, { tagName: inputElement.tagName });
       return false;
     }
   }

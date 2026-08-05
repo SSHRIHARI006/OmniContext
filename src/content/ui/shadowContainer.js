@@ -3,9 +3,6 @@
  * Self-contained, draggable, resizable, and removable UI component displaying live context metrics.
  */
 
-const MigrationPromptEngine = OmniContext.MigrationPromptEngine;
-const ModelRegistry = OmniContext.ModelRegistry;
-
 class ShadowContainer {
   constructor(onPrepareSummary = null) {
     this.host = null;
@@ -18,7 +15,19 @@ class ShadowContainer {
   }
 
   init() {
-    if (document.getElementById('omni-context-root')) return;
+    // Re-adopt an existing HUD (e.g. after a soft navigation re-runs the
+    // content script) instead of leaving this instance without a shadow root,
+    // which would make every later update throw.
+    const existing = document.getElementById('omni-context-root');
+    if (existing) {
+      this.host = existing;
+      this.shadowRoot = existing.shadowRoot;
+      if (!this.shadowRoot) {
+        OmniContext.logError('Existing HUD host has no shadow root; the overlay will not update',
+          new Error('Missing shadow root'));
+      }
+      return;
+    }
 
     this.host = document.createElement('div');
     this.host.id = 'omni-context-root';
@@ -241,24 +250,36 @@ class ShadowContainer {
 
     const migrateBtn = this.shadowRoot.getElementById('omni-migrate-btn');
     migrateBtn.addEventListener('click', () => {
-      if (this.onPrepareSummary) {
-        this.onPrepareSummary();
-      } else {
-        MigrationPromptEngine.injectPromptIntoInput();
+      try {
+        if (this.onPrepareSummary) {
+          const result = this.onPrepareSummary();
+          if (result && typeof result.catch === 'function') {
+            result.catch((error) => OmniContext.logError('Preparing the summary prompt failed', error));
+          }
+        } else {
+          OmniContext.MigrationPromptEngine.injectPromptIntoInput();
+        }
+      } catch (error) {
+        OmniContext.logError('Preparing the summary prompt failed', error);
       }
     });
   }
 
   updateMetrics(metrics, platformKey = 'generic', modelName = '') {
     if (!metrics) return;
+    if (!this.shadowRoot) {
+      OmniContext.logWarn('Skipping HUD update: the overlay has no shadow root', new Error('Missing shadow root'));
+      return;
+    }
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
-    const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
+    const statusLevel = metrics.statusLevel || 'optimal';
+    const formattedLimit = OmniContext.ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
+    const formattedTotal = OmniContext.ModelRegistry.formatTokenCount(metrics.totalTokens);
     const healthScore = metrics.healthScore !== undefined ? metrics.healthScore : metrics.bloatScore;
     const rotScore = metrics.rotScore !== undefined ? metrics.rotScore : 0;
 
     this.shadowRoot.getElementById('omni-badge-summary').innerText = `${formattedTotal} T | ${healthScore}% Health`;
-    this.shadowRoot.getElementById('omni-dot').className = `omni-status-dot omni-status-${metrics.statusLevel}`;
+    this.shadowRoot.getElementById('omni-dot').className = `omni-status-dot omni-status-${statusLevel}`;
     
     this.shadowRoot.getElementById('omni-platform-badge').innerText = platformKey;
     if (modelName) {
@@ -273,7 +294,7 @@ class ShadowContainer {
     else if (metrics.capacityUsed > 50) capBar.style.background = '#facc15';
     else capBar.style.background = '#38bdf8';
 
-    this.shadowRoot.getElementById('omni-bloat-text').innerText = `${healthScore} / 100 (${metrics.statusLevel.toUpperCase()})`;
+    this.shadowRoot.getElementById('omni-bloat-text').innerText = `${healthScore} / 100 (${statusLevel.toUpperCase()})`;
 
     const bloatBar = this.shadowRoot.getElementById('omni-bloat-bar');
     bloatBar.style.width = `${healthScore}%`;
@@ -298,8 +319,8 @@ class ShadowContainer {
       bloated: '#f87171'
     };
     const statStatus = this.shadowRoot.getElementById('omni-stat-status');
-    statStatus.innerText = metrics.statusLevel.toUpperCase();
-    statStatus.style.color = statusColors[metrics.statusLevel] || '#4ade80';
+    statStatus.innerText = statusLevel.toUpperCase();
+    statStatus.style.color = statusColors[statusLevel] || '#4ade80';
 
     const migrateBtn = this.shadowRoot.getElementById('omni-migrate-btn');
     if (healthScore >= 85) {

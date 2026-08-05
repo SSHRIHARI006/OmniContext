@@ -5,7 +5,22 @@
  */
 
 const browser = globalThis.browser || globalThis.chrome;
-const { MetricsCalculator, MigrationPromptEngine, ModelRegistry } = globalThis.OmniContext;
+// Referenced through the namespace object: popup.html loads these files as
+// classic scripts sharing one global lexical scope, so top-level aliases would
+// redeclare the classes those files already declared.
+const omni = globalThis.OmniContext;
+
+/**
+ * True when a tabs.sendMessage failure only means "no OmniContext content
+ * script in this tab" (the popup was opened on a non-LLM page), as opposed to
+ * a real messaging failure that must be surfaced.
+ * @param {Error} error
+ * @returns {boolean}
+ */
+function isNoReceiverError(error) {
+  const message = (error && error.message) || '';
+  return /Receiving end does not exist|Could not establish connection|No matching message handler|message port closed/i.test(message);
+}
 
 class PopupController {
   constructor() {
@@ -14,7 +29,10 @@ class PopupController {
     this.modelName = '';
     this.isEnabled = true;
 
-    this.init();
+    this.init().catch((error) => {
+      omni.logError('Popup initialization failed', error);
+      this.showToast('Popup failed to initialize');
+    });
   }
 
   async init() {
@@ -27,21 +45,29 @@ class PopupController {
 
   bindEvents() {
     const extensionToggle = document.getElementById('extensionToggle');
-    extensionToggle.addEventListener('change', (e) => this.handleToggleChange(e.target.checked));
+    extensionToggle.addEventListener('change', (e) => {
+      this.handleToggleChange(e.target.checked).catch((error) => omni.logError('Toggle change failed', error));
+    });
 
-    document.getElementById('btnMigrate').addEventListener('click', () => this.handleMigrate());
-    document.getElementById('btnCopyPrompt').addEventListener('click', () => this.handleCopyPrompt());
+    document.getElementById('btnMigrate').addEventListener('click', () => {
+      this.handleMigrate().catch((error) => omni.logError('Migrate action failed', error));
+    });
+    document.getElementById('btnCopyPrompt').addEventListener('click', () => {
+      this.handleCopyPrompt().catch((error) => omni.logError('Copy prompt action failed', error));
+    });
     document.getElementById('btnRescan').addEventListener('click', () => this.handleRescan());
 
     const debugToggle = document.getElementById('debugToggle');
-    debugToggle.addEventListener('change', (event) => this.handleDebugToggle(event.target.checked));
-    this.loadDebugState();
+    debugToggle.addEventListener('change', (event) => {
+      this.handleDebugToggle(event.target.checked).catch((error) => omni.logError('Debug toggle failed', error));
+    });
+    this.loadDebugState().catch((error) => omni.logWarn('Could not load the debug setting', error));
 
     document.getElementById('simSelect').addEventListener('change', (e) => {
       if (e.target.value !== 'auto') {
-        this.runSimulation(e.target.value);
+        this.renderMetricsSafely(() => this.runSimulation(e.target.value));
       } else {
-        this.fetchMetricsFromActiveTab();
+        this.fetchMetricsFromActiveTab().catch((error) => omni.logError('Could not refresh metrics', error));
       }
     });
   }
@@ -50,8 +76,10 @@ class PopupController {
     try {
       const res = await browser.storage.local.get('extensionEnabled');
       this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-    } catch (e) {
+    } catch (error) {
       this.isEnabled = true;
+      omni.logWarn('Could not read the monitoring state, defaulting to enabled', error);
+      this.showToast('Could not read saved settings');
     }
     this.updateToggleUI(this.isEnabled);
   }
@@ -60,8 +88,9 @@ class PopupController {
     try {
       const result = await browser.storage.local.get('debugEnabled');
       document.getElementById('debugToggle').checked = result?.debugEnabled === true;
-    } catch (e) {
+    } catch (error) {
       document.getElementById('debugToggle').checked = false;
+      omni.logWarn('Could not read the debug setting, defaulting to off', error);
     }
   }
 
@@ -70,10 +99,16 @@ class PopupController {
       await browser.storage.local.set({ debugEnabled: enabled });
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
       if (tabs?.[0]?.id) {
-        await browser.tabs.sendMessage(tabs[0].id, { action: 'SET_DEBUG_STATE', enabled: !!enabled });
+        try {
+          await browser.tabs.sendMessage(tabs[0].id, { action: 'SET_DEBUG_STATE', enabled: !!enabled });
+        } catch (error) {
+          if (!isNoReceiverError(error)) throw error;
+          omni.logWarn('No content script in the active tab; debug setting applies on next page load', error);
+        }
       }
       this.showToast(enabled ? 'Debug logging enabled' : 'Debug logging disabled');
-    } catch (e) {
+    } catch (error) {
+      omni.logError('Could not update debug logging', error);
       this.showToast('Could not update debug logging');
     }
   }
@@ -84,15 +119,29 @@ class PopupController {
 
     try {
       await browser.storage.local.set({ extensionEnabled: enabled });
+    } catch (error) {
+      omni.logError('Could not save the monitoring state', error);
+      this.showToast('Could not save the monitoring state');
+      return;
+    }
+
+    try {
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
       if (tabs && tabs[0] && tabs[0].id) {
-        browser.tabs.sendMessage(tabs[0].id, { action: 'SET_EXTENSION_STATE', enabled });
+        await browser.tabs.sendMessage(tabs[0].id, { action: 'SET_EXTENSION_STATE', enabled });
       }
-    } catch (e) {}
+    } catch (error) {
+      if (isNoReceiverError(error)) {
+        omni.logWarn('No content script in the active tab; the new state applies on next page load', error);
+      } else {
+        omni.logError('Could not notify the active tab of the new monitoring state', error);
+        this.showToast('Saved, but the active tab was not updated');
+      }
+    }
 
     this.showToast(enabled ? 'Monitoring Enabled' : 'Monitoring Disabled');
     if (enabled) {
-      this.fetchMetricsFromActiveTab();
+      this.fetchMetricsFromActiveTab().catch((error) => omni.logError('Could not refresh metrics', error));
     }
   }
 
@@ -123,39 +172,66 @@ class PopupController {
       const activeTab = tabs && tabs[0];
       if (activeTab && activeTab.id) {
         const response = await browser.tabs.sendMessage(activeTab.id, { action: 'GET_METRICS' });
+        if (response && response.status === 'error') {
+          throw new Error(response.error || 'Content script reported an error');
+        }
         if (response && response.metrics) {
           this.setDataMode('live');
-          this.updateUI(response.metrics, response.platformKey, response.modelName);
+          this.renderMetricsSafely(() => this.updateUI(response.metrics, response.platformKey, response.modelName));
           return;
         }
       }
-    } catch (err) {
-      console.debug('[OmniContext Popup] Error fetching active tab metrics:', err);
+    } catch (error) {
+      if (isNoReceiverError(error)) {
+        omni.logWarn('No OmniContext content script in the active tab', error);
+      } else {
+        omni.logError('Could not read metrics from the active tab', error);
+        this.showToast('Could not read metrics from this tab');
+      }
     }
 
     // Fallback to storage
-    this.fetchFromStorage();
+    await this.fetchFromStorage();
   }
 
   async fetchFromStorage() {
+    let cached = null;
     try {
       const result = await browser.storage.local.get('activeMetrics');
-      if (result && result.activeMetrics && result.activeMetrics.metrics) {
-        this.setDataMode('live');
-        this.updateUI(result.activeMetrics.metrics, result.activeMetrics.platformKey, result.activeMetrics.modelName);
-      } else {
-        this.showToast('No live data — showing simulation');
-        this.runSimulation('gemini');
-      }
-    } catch (e) {
-      this.showToast('No live data — showing simulation');
-      this.runSimulation('gemini');
+      cached = result && result.activeMetrics && result.activeMetrics.metrics ? result.activeMetrics : null;
+    } catch (error) {
+      omni.logError('Could not read cached metrics from local storage', error);
+      this.showToast('Could not read cached metrics');
+    }
+
+    if (cached) {
+      this.setDataMode('live');
+      this.renderMetricsSafely(() => this.updateUI(cached.metrics, cached.platformKey, cached.modelName));
+      return;
+    }
+
+    this.showToast('No live data — showing simulation');
+    this.renderMetricsSafely(() => this.runSimulation('gemini'));
+  }
+
+  /**
+   * Runs a render that depends on externally supplied metrics. Malformed or
+   * partial payloads would otherwise throw mid-render and leave the popup
+   * showing a half-updated dashboard with no explanation.
+   * @param {Function} render
+   */
+  renderMetricsSafely(render) {
+    try {
+      render();
+    } catch (error) {
+      omni.logError('Could not render metrics', error);
+      this.showToast('Could not render metrics — see the console');
     }
   }
 
   runSimulation(platformKey = 'gemini') {
     this.setDataMode('simulation');
-    const modelInfo = ModelRegistry.getModelInfo(platformKey);
+    const modelInfo = omni.ModelRegistry.getModelInfo(platformKey);
 
     const mockMessages = [
       { id: '1', role: 'user', text: 'Can you write a complete specification and code architecture for OmniContext extension?' },
@@ -166,7 +242,7 @@ class PopupController {
       { id: '6', role: 'assistant', text: 'Adding bloat formula:\n```typescript\ninterface MetricsPayload { totalTokens: number; bloatScore: number; }\n```\n' + 'Additional details '.repeat(600), codeText: 'interface MetricsPayload { totalTokens: number; bloatScore: number; }' }
     ];
 
-    const metrics = MetricsCalculator.calculateMetrics(mockMessages, {
+    const metrics = omni.MetricsCalculator.calculateMetrics(mockMessages, {
       hardLimitTokens: modelInfo.limit,
       tokenMultiplier: modelInfo.multiplier || 1.0
     });
@@ -190,7 +266,7 @@ class PopupController {
   updateUI(metrics, platformKey = 'generic', modelName = '') {
     this.activeMetrics = metrics;
     this.platformKey = platformKey;
-    this.modelName = modelName || ModelRegistry.getModelInfo(platformKey).name;
+    this.modelName = modelName || omni.ModelRegistry.getModelInfo(platformKey).name;
 
     document.getElementById('platformBadge').innerText = `${this.modelName}`;
 
@@ -236,9 +312,9 @@ class PopupController {
     if (bloatDetail) bloatDetail.innerText = `${metrics.bloatScore}`;
     if (rotDetail) rotDetail.innerText = `${metrics.rotScore}`;
 
-    const formattedLimit = ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
-    const formattedTotal = ModelRegistry.formatTokenCount(metrics.totalTokens);
-    const formattedRemaining = ModelRegistry.formatTokenCount(metrics.remainingTokens);
+    const formattedLimit = omni.ModelRegistry.formatTokenCount(metrics.contextLimit || metrics.softLimit);
+    const formattedTotal = omni.ModelRegistry.formatTokenCount(metrics.totalTokens);
+    const formattedRemaining = omni.ModelRegistry.formatTokenCount(metrics.remainingTokens);
 
     document.getElementById('capacityRatio').innerText = `${metrics.totalTokens.toLocaleString()} / ${formattedLimit}`;
     const capacityFill = document.getElementById('capacityFill');
@@ -283,28 +359,44 @@ class PopupController {
       const tabs = await browser.tabs.query({ active: true, currentWindow: true });
       const activeTab = tabs && tabs[0];
       if (activeTab && activeTab.id) {
-        browser.tabs.sendMessage(activeTab.id, { action: 'PREPARE_SUMMARY' });
-        this.showToast('Summary prompt injected');
-        return;
+        const response = await browser.tabs.sendMessage(activeTab.id, { action: 'PREPARE_SUMMARY' });
+        if (response && response.injected) {
+          this.showToast('Summary prompt injected');
+          return;
+        }
+        if (response && response.copied) {
+          this.showToast('Prompt copied to clipboard');
+          return;
+        }
+        if (response && response.status === 'error') {
+          omni.logError('Content script could not prepare the summary prompt', new Error(response.error || 'Unknown error'));
+        }
       }
-    } catch (err) {}
-    this.handleCopyPrompt();
+    } catch (error) {
+      if (isNoReceiverError(error)) {
+        omni.logWarn('No content script in the active tab; copying the prompt instead', error);
+      } else {
+        omni.logError('Could not ask the active tab to inject the summary prompt', error);
+      }
+    }
+    await this.handleCopyPrompt();
   }
 
-  handleCopyPrompt() {
-    const promptText = MigrationPromptEngine.getPromptText();
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(promptText).then(() => {
-        this.showToast('Prompt copied to clipboard');
-      }).catch(() => {
-        this.showToast('Failed to copy prompt');
-      });
+  async handleCopyPrompt() {
+    const promptText = omni.MigrationPromptEngine.getPromptText();
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(promptText);
+      this.showToast('Prompt copied to clipboard');
+    } catch (error) {
+      omni.logError('Could not copy the summary prompt to the clipboard', error);
+      this.showToast('Failed to copy prompt');
     }
   }
 
   handleRescan() {
     this.showToast('Rescanning active tab...');
-    this.fetchMetricsFromActiveTab();
+    this.fetchMetricsFromActiveTab().catch((error) => omni.logError('Rescan failed', error));
   }
 
   showToast(message) {

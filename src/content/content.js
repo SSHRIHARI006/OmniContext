@@ -9,18 +9,10 @@
  * run directly in every generated browser build.
  */
 
-const {
-  ChatGPTAdapter,
-  ClaudeAdapter,
-  GeminiAdapter,
-  DeepSeekAdapter,
-  KimiAdapter,
-  QwenAdapter,
-  GenericAdapter,
-  MetricsCalculator,
-  MigrationPromptEngine,
-  ShadowContainer
-} = OmniContext;
+// Referenced through the namespace object: content script files share one
+// global lexical scope, so top-level aliases would redeclare the classes the
+// earlier files already declared (a SyntaxError that aborts the whole file).
+const omni = OmniContext;
 
 const extApi = typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null);
 
@@ -38,12 +30,12 @@ class ContentOrchestrator {
     this.isEnabled = true;
     this.debugEnabled = false;
 
-    this.init();
+    this.init().catch((error) => omni.logError('Content script initialization failed', error));
   }
 
   async init() {
     this.selectAdapter();
-    this.shadowUI = new ShadowContainer(() => this.handlePrepareSummary());
+    this.shadowUI = new omni.ShadowContainer(() => this.handlePrepareSummary());
     this.setupMessageListeners();
     this.setupStorageListeners();
     await this.loadDebugState();
@@ -64,6 +56,7 @@ class ContentOrchestrator {
       this.debugEnabled = result?.debugEnabled === true;
     } catch (error) {
       this.debugEnabled = false;
+      omni.logWarn('Could not read debug setting, debug logging stays off', error);
     }
   }
 
@@ -77,8 +70,9 @@ class ContentOrchestrator {
       try {
         const res = await extApi.storage.local.get('extensionEnabled');
         this.isEnabled = res && res.extensionEnabled !== undefined ? res.extensionEnabled : true;
-      } catch (e) {
+      } catch (error) {
         this.isEnabled = true;
+        omni.logWarn('Could not read enabled state, defaulting to enabled', error);
       }
     } else {
       this.isEnabled = true;
@@ -89,12 +83,12 @@ class ContentOrchestrator {
   selectAdapter() {
     const hostname = window.location.hostname;
     const adapters = [
-      new ChatGPTAdapter(),
-      new ClaudeAdapter(),
-      new GeminiAdapter(),
-      new DeepSeekAdapter(),
-      new KimiAdapter(),
-      new QwenAdapter()
+      new omni.ChatGPTAdapter(),
+      new omni.ClaudeAdapter(),
+      new omni.GeminiAdapter(),
+      new omni.DeepSeekAdapter(),
+      new omni.KimiAdapter(),
+      new omni.QwenAdapter()
     ];
 
     for (const ad of adapters) {
@@ -105,7 +99,7 @@ class ContentOrchestrator {
     }
 
     if (!this.adapter) {
-      this.adapter = new GenericAdapter();
+      this.adapter = new omni.GenericAdapter();
     }
   }
 
@@ -158,9 +152,12 @@ class ContentOrchestrator {
       const script = document.createElement('script');
       script.id = 'omni-interceptor-script';
       script.src = (extApi || chrome).runtime.getURL('src/content/interceptor.js');
+      script.addEventListener('error', () => {
+        omni.logWarn('Interceptor script failed to load; model detection falls back to DOM scraping', new Error('script load error'), { src: script.src });
+      });
       (document.head || document.documentElement).appendChild(script);
-    } catch (e) {
-      console.debug('[OmniContext] Could not inject interceptor:', e);
+    } catch (error) {
+      omni.logWarn('Could not inject interceptor; model detection falls back to DOM scraping', error);
     }
   }
 
@@ -177,7 +174,7 @@ class ContentOrchestrator {
         modelSource: this.modelInfo.source
       });
 
-      const metrics = MetricsCalculator.calculateMetrics(messages, {
+      const metrics = omni.MetricsCalculator.calculateMetrics(messages, {
         hardLimitTokens: this.modelInfo.limit,
         tokenMultiplier: this.modelInfo.multiplier || this.adapter.tokenMultiplier
       });
@@ -187,9 +184,9 @@ class ContentOrchestrator {
 
       this.shadowUI.updateMetrics(metrics, this.adapter.platformKey, this.modelInfo.name);
       this.syncStateToBackground(metrics);
-    } catch (err) {
-      console.debug('[OmniContext] Content scan error:', err);
-      this.debugLog('Scan failed', { errorName: err?.name || 'Error' });
+    } catch (error) {
+      omni.logError('Scan failed; metrics were not updated', error, { adapter: this.adapter?.platformKey });
+      this.debugLog('Scan failed', { errorName: error?.name || 'Error' });
     }
   }
 
@@ -205,27 +202,57 @@ class ContentOrchestrator {
 
     if (extApi && extApi.runtime && extApi.runtime.sendMessage) {
       try {
-        extApi.runtime.sendMessage(payload).catch(() => {});
-      } catch (e) {}
+        const sent = extApi.runtime.sendMessage(payload);
+        if (sent && typeof sent.catch === 'function') {
+          sent.catch((error) => omni.logWarn('Background did not accept the metrics update', error));
+        }
+      } catch (error) {
+        omni.logWarn('Could not send the metrics update to the background worker', error);
+      }
     }
 
     if (extApi && extApi.storage && extApi.storage.local) {
       try {
-        extApi.storage.local.set({ activeMetrics: payload });
-      } catch (e) {}
+        const stored = extApi.storage.local.set({ activeMetrics: payload });
+        if (stored && typeof stored.catch === 'function') {
+          stored.catch((error) => omni.logWarn('Could not cache metrics in local storage', error));
+        }
+      } catch (error) {
+        omni.logWarn('Could not cache metrics in local storage', error);
+      }
     }
   }
 
-  handlePrepareSummary() {
-    if (!this.isEnabled) return;
-    const input = this.adapter.getChatInput() || MigrationPromptEngine.findChatInput();
-    const success = MigrationPromptEngine.injectPromptIntoInput(input);
+  async handlePrepareSummary() {
+    if (!this.isEnabled) return { status: 'disabled' };
 
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(MigrationPromptEngine.getPromptText()).catch(() => {});
+    let injected = false;
+    try {
+      const input = this.adapter.getChatInput() || omni.MigrationPromptEngine.findChatInput();
+      injected = omni.MigrationPromptEngine.injectPromptIntoInput(input);
+    } catch (error) {
+      omni.logError('Could not inject the summary prompt into the chat input', error);
     }
 
-    this.showToast(success ? 'Summary prompt injected into input.' : 'Prompt copied to clipboard.');
+    if (injected) {
+      this.showToast('Summary prompt injected into input.');
+      return { status: 'ok', injected: true, copied: false };
+    }
+
+    let copied = false;
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(omni.MigrationPromptEngine.getPromptText());
+      copied = true;
+    } catch (error) {
+      omni.logError('Could not copy the summary prompt to the clipboard', error);
+    }
+
+    this.showToast(copied
+      ? 'Prompt copied to clipboard.'
+      : 'Could not inject or copy the prompt — see the console for details.');
+
+    return { status: copied ? 'ok' : 'error', injected: false, copied };
   }
 
   showToast(message) {
@@ -254,12 +281,16 @@ class ContentOrchestrator {
   setupStorageListeners() {
     if (extApi && extApi.storage && extApi.storage.onChanged) {
       extApi.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'local' && changes.extensionEnabled !== undefined) {
-          this.isEnabled = !!changes.extensionEnabled.newValue;
-          this.shadowUI.setVisible(this.isEnabled);
-          if (this.isEnabled) {
-            this.performScan();
+        try {
+          if (namespace === 'local' && changes.extensionEnabled !== undefined) {
+            this.isEnabled = !!changes.extensionEnabled.newValue;
+            this.shadowUI.setVisible(this.isEnabled);
+            if (this.isEnabled) {
+              this.performScan();
+            }
           }
+        } catch (error) {
+          omni.logError('Failed to apply a storage change', error, { namespace });
         }
       });
     }
@@ -268,36 +299,63 @@ class ContentOrchestrator {
   setupMessageListeners() {
     if (extApi && extApi.runtime && extApi.runtime.onMessage) {
       extApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'SET_DEBUG_STATE') {
-          this.debugEnabled = !!request.enabled;
-          sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });
-        } else if (request.action === 'SET_EXTENSION_STATE') {
-          this.isEnabled = !!request.enabled;
-          this.shadowUI.setVisible(this.isEnabled);
-          if (this.isEnabled) {
-            this.performScan();
+        const action = request && request.action;
+        try {
+          if (action === 'SET_DEBUG_STATE') {
+            this.debugEnabled = !!request.enabled;
+            sendResponse({ status: 'ok', debugEnabled: this.debugEnabled });
+          } else if (action === 'SET_EXTENSION_STATE') {
+            this.isEnabled = !!request.enabled;
+            this.shadowUI.setVisible(this.isEnabled);
+            if (this.isEnabled) {
+              this.performScan();
+            }
+            sendResponse({ status: 'ok', enabled: this.isEnabled });
+          } else if (action === 'GET_METRICS') {
+            if (this.isEnabled) this.performScan();
+            sendResponse({ status: 'ok', metrics: this.latestMetrics, platformKey: this.adapter.platformKey, modelName: this.modelInfo ? this.modelInfo.name : 'Default Model', isEnabled: this.isEnabled });
+          } else if (action === 'PREPARE_SUMMARY') {
+            if (!this.isEnabled) {
+              sendResponse({ status: 'disabled' });
+            } else {
+              // Asynchronous: keep the channel open until the prompt is injected
+              // or copied so the popup reports the real outcome.
+              this.handlePrepareSummary()
+                .then((result) => sendResponse(result))
+                .catch((error) => {
+                  omni.logError('Preparing the summary prompt failed', error);
+                  sendResponse({ status: 'error', error: error?.message || 'Unknown error' });
+                });
+              return true;
+            }
+          } else if (action === 'FORCE_RESCAN') {
+            if (this.isEnabled) this.performScan();
+            sendResponse({ status: 'ok', metrics: this.latestMetrics });
+          } else {
+            sendResponse({ status: 'error', error: `Unknown action: ${action}` });
           }
-          sendResponse({ status: 'ok', enabled: this.isEnabled });
-        } else if (request.action === 'GET_METRICS') {
-          if (this.isEnabled) this.performScan();
-          sendResponse({ metrics: this.latestMetrics, platformKey: this.adapter.platformKey, modelName: this.modelInfo ? this.modelInfo.name : 'Default Model', isEnabled: this.isEnabled });
-        } else if (request.action === 'PREPARE_SUMMARY') {
-          if (this.isEnabled) this.handlePrepareSummary();
-          sendResponse({ status: 'ok' });
-        } else if (request.action === 'FORCE_RESCAN') {
-          if (this.isEnabled) this.performScan();
-          sendResponse({ metrics: this.latestMetrics });
+        } catch (error) {
+          omni.logError('Message handler failed', error, { action });
+          sendResponse({ status: 'error', error: error?.message || 'Unknown error' });
         }
-        return true;
+        return false;
       });
     }
   }
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => new ContentOrchestrator());
-} else {
-  new ContentOrchestrator();
+function startOrchestrator() {
+  try {
+    new ContentOrchestrator();
+  } catch (error) {
+    omni.logError('Content script could not start', error);
+  }
 }
 
-OmniContext.ContentOrchestrator = ContentOrchestrator;
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startOrchestrator);
+} else {
+  startOrchestrator();
+}
+
+omni.ContentOrchestrator = ContentOrchestrator;

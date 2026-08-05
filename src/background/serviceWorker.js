@@ -2,9 +2,37 @@
  * OmniContext Background Service Worker (Cross-Browser Manifest V3: Chrome, Firefox, Edge, Brave)
  * Manages extension state, badge updates, and tab communications.
  * Uses the native browser/chrome extension API namespace.
+ *
+ * The worker is loaded on its own (no shared namespace file), so the error
+ * reporting helpers are defined locally.
  */
 
 const browser = globalThis.browser || globalThis.chrome;
+
+function logError(scope, error, details = {}) {
+  const name = error && error.name ? error.name : 'Error';
+  const message = error && error.message ? error.message : String(error);
+  console.error(`[OmniContext] ${scope}: ${name}: ${message}`, details);
+}
+
+/**
+ * Awaits an extension API call that returns either a promise (Firefox,
+ * Chrome MV3) or undefined (callback-style), reporting failures instead of
+ * leaving an unhandled rejection.
+ * @param {string} scope
+ * @param {Function} call
+ * @param {Object} [details]
+ */
+function reportFailures(scope, call, details = {}) {
+  try {
+    const result = call();
+    if (result && typeof result.catch === 'function') {
+      result.catch((error) => logError(scope, error, details));
+    }
+  } catch (error) {
+    logError(scope, error, details);
+  }
+}
 
 browser.runtime.onInstalled.addListener(() => {
   console.log('[OmniContext] Extension installed successfully (cross-browser).');
@@ -12,8 +40,15 @@ browser.runtime.onInstalled.addListener(() => {
 });
 
 // Listen for messages from content script or popup
-browser.runtime.onMessage.addListener((message, sender) => {
-  if (message && message.type === 'OMNI_METRICS_UPDATE') {
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || message.type !== 'OMNI_METRICS_UPDATE') {
+    // Nothing to do; respond so the sender's promise settles instead of
+    // hanging until the message port closes.
+    sendResponse({ status: 'ignored' });
+    return false;
+  }
+
+  try {
     const { metrics, platformKey } = message;
 
     // Update Extension Badge
@@ -27,15 +62,21 @@ browser.runtime.onMessage.addListener((message, sender) => {
       timestamp: Date.now()
     };
 
+    const items = { activeMetrics: payload };
     if (sender && sender.tab && sender.tab.id) {
-      const tabKey = `tab_metrics_${sender.tab.id}`;
-      browser.storage.local.set({ [tabKey]: payload, activeMetrics: payload });
-    } else {
-      browser.storage.local.set({ activeMetrics: payload });
+      items[`tab_metrics_${sender.tab.id}`] = payload;
     }
+    reportFailures('Could not persist metrics', () => browser.storage.local.set(items), {
+      tabId: sender?.tab?.id
+    });
+
+    sendResponse({ status: 'ok' });
+  } catch (error) {
+    logError('Failed to handle a metrics update', error, { platformKey: message.platformKey });
+    sendResponse({ status: 'error', error: error?.message || 'Unknown error' });
   }
 
-  return true; // Keep async response channel open
+  return false;
 });
 
 /**
@@ -67,12 +108,15 @@ function updateBadge(metrics) {
 
 function setExtensionBadge(text, color) {
   const actionApi = browser.action || browser.browserAction;
-  if (actionApi) {
-    if (actionApi.setBadgeBackgroundColor) {
-      actionApi.setBadgeBackgroundColor({ color });
-    }
-    if (actionApi.setBadgeText) {
-      actionApi.setBadgeText({ text });
-    }
+  if (!actionApi) {
+    logError('Cannot update the badge', new Error('No action/browserAction API available'));
+    return;
+  }
+
+  if (actionApi.setBadgeBackgroundColor) {
+    reportFailures('Could not set the badge color', () => actionApi.setBadgeBackgroundColor({ color }), { color });
+  }
+  if (actionApi.setBadgeText) {
+    reportFailures('Could not set the badge text', () => actionApi.setBadgeText({ text }), { text });
   }
 }
