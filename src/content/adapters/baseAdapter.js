@@ -6,8 +6,6 @@
  * falls back to DOM scraping.
  */
 
-const ModelRegistry = OmniContext.ModelRegistry;
-
 class BaseAdapter {
   constructor(config = {}) {
     this.platformKey = config.platformKey || 'generic';
@@ -59,13 +57,13 @@ class BaseAdapter {
    */
   getDetectedModel() {
     if (this._interceptedModelId) {
-      const match = ModelRegistry.getModelByApiId(this._interceptedModelId);
+      const match = OmniContext.ModelRegistry.getModelByApiId(this._interceptedModelId);
       if (match) {
         return { ...match, source: 'network' };
       }
     }
     const scrapedText = this.extractModelName();
-    return { ...ModelRegistry.getModelInfo(this.platformKey, scrapedText), source: 'dom' };
+    return { ...OmniContext.ModelRegistry.getModelInfo(this.platformKey, scrapedText), source: 'dom' };
   }
 
   /**
