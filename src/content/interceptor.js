@@ -17,16 +17,42 @@
 
   const TAG = '[OmniContext Interceptor]';
 
+  // Only request/response payloads of conversation endpoints are inspected, so
+  // unrelated traffic (auth, billing, telemetry) is never parsed or read.
+  const MODEL_ENDPOINT_PATTERN = /(conversation|completion|chat|message|generate|stream|api\/v\d)/i;
+
+  // Guards against parsing multi-megabyte payloads on every request.
+  const MAX_PAYLOAD_CHARS = 256 * 1024;
+  const MAX_MODEL_ID_LENGTH = 200;
+
+  function isRelevantUrl(url) {
+    if (typeof url !== 'string' || !url) return false;
+    return MODEL_ENDPOINT_PATTERN.test(url);
+  }
+
+  function parsePayload(text) {
+    if (typeof text !== 'string' || !text || text.length > MAX_PAYLOAD_CHARS) return null;
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return null;
+    }
+  }
+
   function sendDetection(modelId, source) {
     if (!modelId || typeof modelId !== 'string') return;
+    const trimmed = modelId.trim();
+    if (!trimmed || trimmed.length > MAX_MODEL_ID_LENGTH) return;
     try {
+      // '/' restricts delivery to same-origin listeners (the isolated-world
+      // content script) instead of broadcasting to any cross-origin frame.
       window.postMessage(
         {
           type: 'OMNI_MODEL_DETECTED',
-          modelId: modelId.trim(),
+          modelId: trimmed,
           source: source || 'unknown'
         },
-        '*'
+        '/'
       );
     } catch (e) {
       /* page may be tearing down; ignore */
@@ -61,16 +87,21 @@
       }
 
       try {
-        const urlString = typeof url === 'string' ? url : url instanceof URL ? url.href : '';
+        const urlString = typeof url === 'string'
+          ? url
+          : url instanceof URL
+            ? url.href
+            : url && typeof url.url === 'string' ? url.url : '';
+        if (!isRelevantUrl(urlString)) return response;
+
         if (options && typeof options.body === 'string') {
-          const parsed = JSON.parse(options.body);
-          const model = extractModelFromJson(parsed);
+          const model = extractModelFromJson(parsePayload(options.body));
           if (model) sendDetection(model, 'fetch_request');
         }
         if (response && typeof response.clone === 'function') {
           const cloned = response.clone();
-          const data = await cloned.json().catch(() => null);
-          const model = extractModelFromJson(data);
+          const text = await cloned.text().catch(() => '');
+          const model = extractModelFromJson(parsePayload(text));
           if (model) sendDetection(model, 'fetch_response');
         }
       } catch (e) {
@@ -93,10 +124,11 @@
     };
 
     XHR.prototype.send = function (body) {
+      if (!isRelevantUrl(this.__omniUrl)) return originalSend.apply(this, [body]);
+
       try {
         if (typeof body === 'string') {
-          const parsed = JSON.parse(body);
-          const model = extractModelFromJson(parsed);
+          const model = extractModelFromJson(parsePayload(body));
           if (model) sendDetection(model, 'xhr_request');
         }
       } catch (e) {
@@ -105,8 +137,7 @@
 
       this.addEventListener('load', function () {
         try {
-          const data = JSON.parse(this.responseText);
-          const model = extractModelFromJson(data);
+          const model = extractModelFromJson(parsePayload(this.responseText));
           if (model) sendDetection(model, 'xhr_response');
         } catch (e) {
           /* non-JSON response — ignore */

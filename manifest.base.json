@@ -19,6 +19,9 @@
     "*://*.aliyun.com/*",
     "*://*.qwenlm.ai/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'none'; form-action 'none'"
+  },
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_title": "OmniContext Monitor",
@@ -70,7 +73,15 @@
         "src/assets/icons/icon.svg"
       ],
       "matches": [
-        "<all_urls>"
+        "*://*.chatgpt.com/*",
+        "*://*.openai.com/*",
+        "*://*.claude.ai/*",
+        "*://*.gemini.google.com/*",
+        "*://*.deepseek.com/*",
+        "*://*.moonshot.cn/*",
+        "*://*.kimi.com/*",
+        "*://*.aliyun.com/*",
+        "*://*.qwenlm.ai/*"
       ]
     }
   ]
